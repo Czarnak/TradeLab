@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "market-lab"
 version = "0.1.0"
-description = "Desktop GUI integrating strategy backtesting, ML model building, and insider-trading scanning."
+description = "Desktop GUI integrating strategy backtesting, ML model building, and optimization."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}

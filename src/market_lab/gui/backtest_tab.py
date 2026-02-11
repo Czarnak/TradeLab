@@ -1,24 +1,20 @@
-"""Backtest tab: data loading, strategy selection, run, results display, and optimization."""
+"""Backtest tab: data load, strategy select, parameter edit, run, report, optimize."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThreadPool, Slot
 from PySide6.QtWidgets import (
     QComboBox,
-    QDoubleSpinBox,
-    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QLineEdit,
     QMessageBox,
+    QProgressBar,
     QPushButton,
-    QSpinBox,
     QSplitter,
     QTableView,
     QTextEdit,
@@ -26,418 +22,341 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from market_lab.backtest.engine import BacktestConfig, BacktestResult, run_backtest
-from market_lab.backtest.optimizer import optimize, save_optimization_results
-from market_lab.backtest.report import save_report
-from market_lab.data.loaders import load_csv, load_parquet
-from market_lab.data.sample_generator import generate_ohlcv_bars
-from market_lab.data.yahoo import VALID_INTERVALS, VALID_PERIODS
-from market_lab.gui.settings_dialog import SettingsDialog
-from market_lab.gui.widgets import ChartCanvas, PandasTableModel
-from market_lab.strategies.base import Strategy, all_strategies, get_strategy
-from market_lab.utils.logging import get_logger
-from market_lab.utils.threading import run_in_background
-
-log = get_logger("gui.backtest_tab")
+from market_lab.gui.widgets import DataLoaderPanel, MplCanvas, SortableTableModel
+from market_lab.utils.threading import Worker
 
 
 class BacktestTab(QWidget):
-    """Main backtest tab widget."""
+    """Full backtest workflow: load data → pick strategy → configure → run → view."""
 
-    def __init__(self, status_callback=None, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._status = status_callback or (lambda msg: None)
         self._bars: pd.DataFrame | None = None
+        self._result = None
         self._strategy_params: dict = {}
-        self._result: BacktestResult | None = None
+        self._bt_config: dict = {
+            "initial_capital": 100_000,
+            "commission_bps": 5,
+            "slippage_bps": 2,
+            "allow_short": True,
+        }
 
         self._build_ui()
-        self._refresh_strategies()
+        self._load_strategies()
 
     # ------------------------------------------------------------------
-    # UI Construction
+    # UI construction
     # ------------------------------------------------------------------
 
-    def _build_ui(self) -> None:
-        main_layout = QVBoxLayout(self)
+    def _build_ui(self):
+        root = QVBoxLayout(self)
 
-        # --- Top: Data + Strategy controls ---
-        top = QHBoxLayout()
+        # Top: data loader
+        self.data_loader = DataLoaderPanel()
+        self.data_loader.data_loaded.connect(self._on_data_loaded)
+        root.addWidget(self.data_loader)
 
-        # Data group
-        data_grp = QGroupBox("Data Source")
-        data_lay = QVBoxLayout(data_grp)
+        # Data info label
+        self.data_label = QLabel("No data loaded")
+        self.data_label.setStyleSheet("color: #aaa; padding: 2px;")
+        root.addWidget(self.data_label)
 
-        row1 = QHBoxLayout()
-        self._btn_load_csv = QPushButton("Load CSV")
-        self._btn_load_csv.clicked.connect(self._on_load_csv)
-        row1.addWidget(self._btn_load_csv)
+        # Middle: controls row
+        ctrl_layout = QHBoxLayout()
 
-        self._btn_sample = QPushButton("Use Sample Data")
-        self._btn_sample.clicked.connect(self._on_use_sample)
-        row1.addWidget(self._btn_sample)
-        data_lay.addLayout(row1)
-
-        # Yahoo download
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Symbol:"))
-        self._txt_symbol = QLineEdit("AAPL")
-        self._txt_symbol.setMaximumWidth(80)
-        row2.addWidget(self._txt_symbol)
-
-        row2.addWidget(QLabel("Period:"))
-        self._cmb_period = QComboBox()
-        self._cmb_period.addItems(list(VALID_PERIODS))
-        self._cmb_period.setCurrentText("1y")
-        row2.addWidget(self._cmb_period)
-
-        row2.addWidget(QLabel("Interval:"))
-        self._cmb_interval = QComboBox()
-        self._cmb_interval.addItems(list(VALID_INTERVALS))
-        self._cmb_interval.setCurrentText("1d")
-        row2.addWidget(self._cmb_interval)
-
-        self._btn_yahoo = QPushButton("Download")
-        self._btn_yahoo.clicked.connect(self._on_yahoo_download)
-        row2.addWidget(self._btn_yahoo)
-        data_lay.addLayout(row2)
-
-        self._lbl_data_info = QLabel("No data loaded")
-        data_lay.addWidget(self._lbl_data_info)
-        top.addWidget(data_grp, stretch=3)
-
-        # Strategy group
+        # Strategy selector
         strat_grp = QGroupBox("Strategy")
-        strat_lay = QVBoxLayout(strat_grp)
+        strat_l = QHBoxLayout(strat_grp)
+        self.strat_combo = QComboBox()
+        self.strat_combo.currentTextChanged.connect(self._on_strategy_changed)
+        strat_l.addWidget(self.strat_combo)
+        btn_params = QPushButton("Parameters...")
+        btn_params.clicked.connect(self._edit_params)
+        strat_l.addWidget(btn_params)
+        btn_bt_cfg = QPushButton("Engine Config...")
+        btn_bt_cfg.clicked.connect(self._edit_bt_config)
+        strat_l.addWidget(btn_bt_cfg)
+        ctrl_layout.addWidget(strat_grp)
 
-        row3 = QHBoxLayout()
-        row3.addWidget(QLabel("Strategy:"))
-        self._cmb_strategy = QComboBox()
-        self._cmb_strategy.currentTextChanged.connect(self._on_strategy_changed)
-        row3.addWidget(self._cmb_strategy)
-        strat_lay.addLayout(row3)
+        # Action buttons
+        action_grp = QGroupBox("Actions")
+        action_l = QHBoxLayout(action_grp)
+        self.btn_run = QPushButton("Run Backtest")
+        self.btn_run.clicked.connect(self._run_backtest)
+        self.btn_run.setEnabled(False)
+        self.btn_optimize = QPushButton("Optimize")
+        self.btn_optimize.clicked.connect(self._run_optimize)
+        self.btn_optimize.setEnabled(False)
+        action_l.addWidget(self.btn_run)
+        action_l.addWidget(self.btn_optimize)
+        ctrl_layout.addWidget(action_grp)
 
-        row4 = QHBoxLayout()
-        self._btn_settings = QPushButton("Settings...")
-        self._btn_settings.clicked.connect(self._on_settings)
-        row4.addWidget(self._btn_settings)
+        root.addLayout(ctrl_layout)
 
-        self._btn_run = QPushButton("Run Backtest")
-        self._btn_run.setStyleSheet("font-weight: bold;")
-        self._btn_run.clicked.connect(self._on_run)
-        row4.addWidget(self._btn_run)
+        # Progress
+        self.progress = QProgressBar()
+        self.progress.setVisible(False)
+        self.progress.setTextVisible(True)
+        root.addWidget(self.progress)
 
-        self._btn_save = QPushButton("Save Report")
-        self._btn_save.clicked.connect(self._on_save_report)
-        self._btn_save.setEnabled(False)
-        row4.addWidget(self._btn_save)
-        strat_lay.addLayout(row4)
-
-        # Config
-        row5 = QHBoxLayout()
-        row5.addWidget(QLabel("Capital:"))
-        self._spn_capital = QDoubleSpinBox()
-        self._spn_capital.setRange(1_000, 100_000_000)
-        self._spn_capital.setValue(100_000)
-        self._spn_capital.setPrefix("$")
-        self._spn_capital.setDecimals(0)
-        row5.addWidget(self._spn_capital)
-
-        row5.addWidget(QLabel("Comm (bps):"))
-        self._spn_comm = QDoubleSpinBox()
-        self._spn_comm.setRange(0, 100)
-        self._spn_comm.setValue(5)
-        row5.addWidget(self._spn_comm)
-
-        row5.addWidget(QLabel("Slip (bps):"))
-        self._spn_slip = QDoubleSpinBox()
-        self._spn_slip.setRange(0, 100)
-        self._spn_slip.setValue(2)
-        row5.addWidget(self._spn_slip)
-        strat_lay.addLayout(row5)
-
-        top.addWidget(strat_grp, stretch=2)
-        main_layout.addLayout(top)
-
-        # --- Optimization row ---
-        opt_grp = QGroupBox("Optimization (Optuna)")
-        opt_lay = QHBoxLayout(opt_grp)
-
-        opt_lay.addWidget(QLabel("Metric:"))
-        self._cmb_opt_metric = QComboBox()
-        self._cmb_opt_metric.addItems([
-            "sharpe", "sortino", "total_return_pct", "profit_factor",
-            "max_drawdown_pct", "win_rate_pct",
-        ])
-        opt_lay.addWidget(self._cmb_opt_metric)
-
-        opt_lay.addWidget(QLabel("Trials:"))
-        self._spn_trials = QSpinBox()
-        self._spn_trials.setRange(10, 5000)
-        self._spn_trials.setValue(50)
-        opt_lay.addWidget(self._spn_trials)
-
-        self._btn_optimize = QPushButton("Optimize")
-        self._btn_optimize.clicked.connect(self._on_optimize)
-        opt_lay.addWidget(self._btn_optimize)
-
-        self._lbl_opt_status = QLabel("")
-        opt_lay.addWidget(self._lbl_opt_status, stretch=1)
-        main_layout.addWidget(opt_grp)
-
-        # --- Bottom: Results ---
+        # Bottom: results area (splitter)
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Metrics panel
-        self._txt_metrics = QTextEdit()
-        self._txt_metrics.setReadOnly(True)
-        self._txt_metrics.setMaximumWidth(320)
-        splitter.addWidget(self._txt_metrics)
+        # Left: chart
+        self.chart = MplCanvas(self, width=7, height=4)
+        splitter.addWidget(self.chart)
 
-        # Chart
-        self._chart = ChartCanvas(self, width=8, height=4)
-        splitter.addWidget(self._chart)
+        # Right: tabs-like stacked area (metrics + trades)
+        right = QWidget()
+        right_l = QVBoxLayout(right)
+        right_l.setContentsMargins(0, 0, 0, 0)
+
+        # Metrics text
+        self.metrics_text = QTextEdit()
+        self.metrics_text.setReadOnly(True)
+        self.metrics_text.setMaximumHeight(200)
+        self.metrics_text.setPlaceholderText("Metrics will appear here after a backtest run.")
+        right_l.addWidget(QLabel("Metrics"))
+        right_l.addWidget(self.metrics_text)
 
         # Trades table
-        self._trades_model = PandasTableModel()
-        self._trades_table = QTableView()
-        self._trades_table.setModel(self._trades_model)
-        self._trades_table.setSortingEnabled(True)
-        self._trades_table.horizontalHeader().setSectionResizeMode(
+        right_l.addWidget(QLabel("Trades"))
+        self.trades_model = SortableTableModel()
+        self.trades_table = QTableView()
+        self.trades_table.setModel(self.trades_model)
+        self.trades_table.setSortingEnabled(True)
+        self.trades_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
         )
-        splitter.addWidget(self._trades_table)
+        right_l.addWidget(self.trades_table)
 
-        splitter.setSizes([250, 500, 350])
-        main_layout.addWidget(splitter, stretch=1)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        root.addWidget(splitter, stretch=1)
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Strategy loading
     # ------------------------------------------------------------------
 
-    def _refresh_strategies(self) -> None:
-        strats = all_strategies()
-        self._cmb_strategy.clear()
-        self._cmb_strategy.addItems(list(strats.keys()))
-        if strats:
-            first = list(strats.values())[0]
-            self._strategy_params = first.default_params()
+    def _load_strategies(self):
+        import market_lab.strategies.ma_crossover  # noqa: F401
+        import market_lab.strategies.mean_reversion  # noqa: F401
+        from market_lab.strategies.base import list_strategies
 
-    def _current_strategy(self) -> Strategy | None:
-        name = self._cmb_strategy.currentText()
+        self.strat_combo.blockSignals(True)
+        self.strat_combo.clear()
+        for name in list_strategies():
+            self.strat_combo.addItem(name)
+        self.strat_combo.blockSignals(False)
+        if self.strat_combo.count() > 0:
+            self._on_strategy_changed(self.strat_combo.currentText())
+
+    def _on_strategy_changed(self, name: str):
         if not name:
-            return None
-        return get_strategy(name)
+            return
+        from market_lab.strategies.base import get_strategy
+        strat = get_strategy(name)
+        self._strategy_params = strat.default_params()
 
-    def _set_data(self, df: pd.DataFrame, label: str) -> None:
+    # ------------------------------------------------------------------
+    # Data loading
+    # ------------------------------------------------------------------
+
+    @Slot(object, str)
+    def _on_data_loaded(self, df: pd.DataFrame, label: str):
         self._bars = df
         n = len(df)
-        start = str(df.index[0])[:10] if n > 0 else "?"
-        end = str(df.index[-1])[:10] if n > 0 else "?"
-        self._lbl_data_info.setText(f"{label} — {n} bars ({start} → {end})")
-        self._status(f"Data loaded: {label} ({n} bars)")
+        start = df.index[0].strftime("%Y-%m-%d") if hasattr(df.index[0], "strftime") else str(df.index[0])
+        end = df.index[-1].strftime("%Y-%m-%d") if hasattr(df.index[-1], "strftime") else str(df.index[-1])
+        self.data_label.setText(f"Loaded: {label}  |  {n} bars  |  {start} → {end}")
+        self.btn_run.setEnabled(True)
+        self.btn_optimize.setEnabled(True)
 
-    def _show_result(self, result: BacktestResult) -> None:
+        # Plot price
+        ax = self.chart.clear_and_get_ax()
+        ax.plot(df.index, df["close"], color="#4fc3f7", linewidth=1)
+        ax.set_title(f"{label} — Close Price")
+        ax.set_ylabel("Price")
+        self.chart.refresh()
+
+    # ------------------------------------------------------------------
+    # Parameter / config editing
+    # ------------------------------------------------------------------
+
+    def _edit_params(self):
+        name = self.strat_combo.currentText()
+        if not name:
+            return
+        from market_lab.strategies.base import get_strategy
+        from market_lab.gui.settings_dialog import StrategySettingsDialog
+
+        strat = get_strategy(name)
+        dlg = StrategySettingsDialog(strat.parameters_schema(), self._strategy_params, self)
+        if dlg.exec():
+            self._strategy_params = dlg.get_params()
+
+    def _edit_bt_config(self):
+        from market_lab.gui.settings_dialog import BacktestConfigDialog
+
+        dlg = BacktestConfigDialog(self._bt_config, self)
+        if dlg.exec():
+            self._bt_config = dlg.get_config()
+
+    # ------------------------------------------------------------------
+    # Run backtest
+    # ------------------------------------------------------------------
+
+    def _run_backtest(self):
+        if self._bars is None:
+            return
+
+        self.btn_run.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)  # indeterminate
+        self.progress.setFormat("Running backtest...")
+
+        bars = self._bars.copy()
+        strat_name = self.strat_combo.currentText()
+        params = dict(self._strategy_params)
+        bt_cfg = dict(self._bt_config)
+
+        def work():
+            from market_lab.strategies.base import get_strategy
+            from market_lab.backtest.engine import BacktestConfig, run_backtest
+
+            strat = get_strategy(strat_name)
+            signals = strat.run(bars, params)
+            config = BacktestConfig(**bt_cfg)
+            return run_backtest(bars, signals.signal, config)
+
+        worker = Worker(work)
+        worker.signals.result.connect(self._on_backtest_done)
+        worker.signals.error.connect(self._on_backtest_error)
+        QThreadPool.globalInstance().start(worker)
+
+    @Slot(object)
+    def _on_backtest_done(self, result):
         self._result = result
-        self._btn_save.setEnabled(True)
+        self.progress.setVisible(False)
+        self.btn_run.setEnabled(True)
 
         # Metrics
         m = result.metrics
         lines = []
         for k, v in m.items():
-            lines.append(f"<b>{k}</b>: {v}")
-        self._txt_metrics.setHtml("<br>".join(lines))
-
-        # Equity curve chart
-        self._chart.plot_series(
-            result.equity_curve, title="Equity Curve", ylabel="Equity ($)"
-        )
+            if isinstance(v, float):
+                lines.append(f"{k:>22s}: {v:>12.4f}")
+            else:
+                lines.append(f"{k:>22s}: {v:>12}")
+        self.metrics_text.setPlainText("\n".join(lines))
 
         # Trades table
         if result.trades:
-            records = []
+            rows = []
             for t in result.trades:
-                records.append({
-                    "Entry": str(t.entry_date)[:19],
-                    "Exit": str(t.exit_date)[:19],
-                    "Dir": "LONG" if t.direction == 1 else "SHORT",
-                    "Entry$": round(t.entry_price, 2),
-                    "Exit$": round(t.exit_price, 2),
-                    "Qty": round(t.quantity, 2),
-                    "PnL": round(t.pnl, 2),
-                    "Bars": t.bars_held,
+                rows.append({
+                    "entry_date": str(t.entry_date.date()) if hasattr(t.entry_date, "date") else str(t.entry_date),
+                    "exit_date": str(t.exit_date.date()) if hasattr(t.exit_date, "date") else str(t.exit_date),
+                    "direction": "LONG" if t.direction == 1 else "SHORT",
+                    "entry_price": round(t.entry_price, 4),
+                    "exit_price": round(t.exit_price, 4),
+                    "quantity": t.quantity,
+                    "pnl": round(t.pnl, 2),
+                    "bars_held": t.bars_held,
                 })
-            self._trades_model.set_dataframe(pd.DataFrame(records))
+            self.trades_model.set_dataframe(pd.DataFrame(rows))
         else:
-            self._trades_model.set_dataframe(pd.DataFrame())
+            self.trades_model.set_dataframe(pd.DataFrame())
+
+        # Equity chart
+        ax = self.chart.clear_and_get_ax()
+        ax.plot(result.equity_curve.index, result.equity_curve.values,
+                color="#4fc3f7", linewidth=1.2, label="Strategy")
+        ax.axhline(y=m.get("initial_capital", 100_000), color="#888",
+                    linestyle="--", alpha=0.5, label="Initial Capital")
+        ax.set_title("Equity Curve")
+        ax.set_ylabel("Equity ($)")
+        ax.legend(facecolor="#353535", edgecolor="#555", labelcolor="#ccc")
+        self.chart.refresh()
+
+    @Slot(tuple)
+    def _on_backtest_error(self, error_info):
+        self.progress.setVisible(False)
+        self.btn_run.setEnabled(True)
+        exc_type, exc_value, _ = error_info
+        QMessageBox.critical(self, "Backtest Error", f"{exc_type.__name__}: {exc_value}")
 
     # ------------------------------------------------------------------
-    # Slots
+    # Optimize
     # ------------------------------------------------------------------
 
-    def _on_load_csv(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load OHLCV Data", "", "CSV/Parquet (*.csv *.parquet);;All Files (*)"
-        )
-        if not path:
-            return
-        try:
-            if path.endswith(".parquet"):
-                df = load_parquet(path)
-            else:
-                df = load_csv(path, schema="bars")
-            self._set_data(df, Path(path).name)
-        except Exception as exc:
-            QMessageBox.critical(self, "Load Error", str(exc))
-
-    def _on_use_sample(self) -> None:
-        df = generate_ohlcv_bars(n_bars=500, seed=42)
-        self._set_data(df, "Sample GBM Data (500 bars)")
-
-    def _on_yahoo_download(self) -> None:
-        symbol = self._txt_symbol.text().strip()
-        period = self._cmb_period.currentText()
-        interval = self._cmb_interval.currentText()
-        if not symbol:
-            return
-
-        self._status(f"Downloading {symbol}...")
-        self._btn_yahoo.setEnabled(False)
-
-        def do_download():
-            from market_lab.data.yahoo import download
-            return download(symbol, period, interval)
-
-        def on_done(df):
-            self._set_data(df, f"{symbol} ({interval}, {period})")
-            self._btn_yahoo.setEnabled(True)
-
-        def on_error(err):
-            self._btn_yahoo.setEnabled(True)
-            self._status(f"Download failed: {err[:100]}")
-            QMessageBox.critical(self, "Download Error", str(err))
-
-        run_in_background(do_download, on_result=on_done, on_error=on_error)
-
-    def _on_strategy_changed(self, name: str) -> None:
-        strat = self._current_strategy()
-        if strat:
-            self._strategy_params = strat.default_params()
-
-    def _on_settings(self) -> None:
-        strat = self._current_strategy()
-        if not strat:
-            return
-        dlg = SettingsDialog(
-            strat.parameters_schema(), self._strategy_params, title=f"{strat.name} Settings", parent=self
-        )
-        if dlg.exec() == SettingsDialog.DialogCode.Accepted:
-            self._strategy_params = dlg.get_values()
-            self._status(f"Params updated: {self._strategy_params}")
-
-    def _on_run(self) -> None:
+    def _run_optimize(self):
         if self._bars is None:
-            QMessageBox.warning(self, "No Data", "Please load data first.")
-            return
-        strat = self._current_strategy()
-        if not strat:
             return
 
-        self._status("Running backtest...")
-        self._btn_run.setEnabled(False)
+        self.btn_optimize.setEnabled(False)
+        self.btn_run.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("Optimizing... %p%")
 
-        bars = self._bars
-        params = dict(self._strategy_params)
-        config = BacktestConfig(
-            initial_capital=self._spn_capital.value(),
-            commission_bps=self._spn_comm.value(),
-            slippage_bps=self._spn_slip.value(),
-        )
+        bars = self._bars.copy()
+        strat_name = self.strat_combo.currentText()
+        bt_cfg = dict(self._bt_config)
+        n_trials = 100
 
-        def do_backtest():
-            signals = strat.run(bars, params)
-            return run_backtest(bars, signals.signal, config)
+        def work():
+            from market_lab.strategies.base import get_strategy
+            from market_lab.backtest.engine import BacktestConfig
+            from market_lab.backtest.optimizer import optimize
 
-        def on_done(result):
-            self._show_result(result)
-            self._btn_run.setEnabled(True)
-            self._status(
-                f"Backtest done: {result.metrics.get('total_return_pct', 0):.2f}% return, "
-                f"{result.metrics.get('total_trades', 0)} trades"
-            )
+            strat = get_strategy(strat_name)
+            config = BacktestConfig(**bt_cfg)
 
-        def on_error(err):
-            self._btn_run.setEnabled(True)
-            self._status("Backtest failed")
-            QMessageBox.critical(self, "Backtest Error", str(err))
+            def progress_cb(current, total):
+                # Will be called from worker thread; progress bar update
+                # is coarse-grained but safe via signal
+                pass
 
-        run_in_background(do_backtest, on_result=on_done, on_error=on_error)
-
-    def _on_save_report(self) -> None:
-        if self._result is None:
-            return
-        try:
-            out = save_report(self._result)
-            self._status(f"Report saved to {out}")
-            QMessageBox.information(self, "Saved", f"Report saved to:\n{out}")
-        except Exception as exc:
-            QMessageBox.critical(self, "Save Error", str(exc))
-
-    def _on_optimize(self) -> None:
-        if self._bars is None:
-            QMessageBox.warning(self, "No Data", "Please load data first.")
-            return
-        strat = self._current_strategy()
-        if not strat:
-            return
-
-        metric = self._cmb_opt_metric.currentText()
-        n_trials = self._spn_trials.value()
-        config = BacktestConfig(
-            initial_capital=self._spn_capital.value(),
-            commission_bps=self._spn_comm.value(),
-            slippage_bps=self._spn_slip.value(),
-        )
-
-        self._btn_optimize.setEnabled(False)
-        self._lbl_opt_status.setText("Optimizing...")
-        self._status(f"Optimizing {strat.name} ({n_trials} trials)...")
-
-        bars = self._bars
-
-        def do_opt():
             return optimize(
                 strategy=strat,
                 bars=bars,
-                objective_metric=metric,
+                objective_metric="sharpe",
                 n_trials=n_trials,
                 backtest_config=config,
+                seed=42,
+                progress_callback=progress_cb,
             )
 
-        def on_done(result):
-            self._btn_optimize.setEnabled(True)
-            best_val = result["best_value"]
-            best_params = result["best_params"]
-            self._lbl_opt_status.setText(
-                f"Best {metric}={best_val:.4f} | {json.dumps(best_params)}"
-            )
-            self._strategy_params = best_params
-            self._status(f"Optimization done: best {metric}={best_val:.4f}")
+        worker = Worker(work)
+        worker.signals.result.connect(self._on_optimize_done)
+        worker.signals.error.connect(self._on_optimize_error)
+        QThreadPool.globalInstance().start(worker)
 
-            # Run backtest with best params
-            signals = strat.run(bars, best_params)
-            bt_result = run_backtest(bars, signals.signal, config)
-            self._show_result(bt_result)
+    @Slot(object)
+    def _on_optimize_done(self, result):
+        self.progress.setVisible(False)
+        self.btn_optimize.setEnabled(True)
+        self.btn_run.setEnabled(True)
 
-            try:
-                save_optimization_results(result)
-            except Exception:
-                pass
+        best = result["best_params"]
+        best_val = result["best_value"]
 
-        def on_error(err):
-            self._btn_optimize.setEnabled(True)
-            self._lbl_opt_status.setText("Optimization failed")
-            self._status("Optimization failed")
-            QMessageBox.critical(self, "Optimization Error", str(err))
+        # Apply best params
+        self._strategy_params.update(best)
 
-        run_in_background(do_opt, on_result=on_done, on_error=on_error)
+        msg = f"Best Sharpe: {best_val:.4f}\n\nBest Parameters:\n"
+        for k, v in best.items():
+            msg += f"  {k}: {v}\n"
+        msg += "\nParameters have been applied. Click 'Run Backtest' to see results."
+        QMessageBox.information(self, "Optimization Complete", msg)
+
+    @Slot(tuple)
+    def _on_optimize_error(self, error_info):
+        self.progress.setVisible(False)
+        self.btn_optimize.setEnabled(True)
+        self.btn_run.setEnabled(True)
+        exc_type, exc_value, _ = error_info
+        QMessageBox.critical(self, "Optimization Error", f"{exc_type.__name__}: {exc_value}")

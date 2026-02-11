@@ -1,12 +1,42 @@
 # Market-Lab
 
-Desktop application integrating **strategy backtesting + optimization**, **ML model building/training** (Keras), and **insider-trading scanning** (web + EDGAR verification).
+Desktop application integrating **strategy backtesting + optimization** and **ML model building/training** (Keras).
 
 Built with Python 3.11+, PySide6, and a clean modular architecture.
 
 > **Phase 1 complete**: Core data layer, backtest engine, strategies, metrics, optimization, CLI, tests, and CI.
 > **Phase 2A complete**: ML module — feature builders, dataset builder, Keras model builder, trainer with equity curves, Optuna hyperparameter optimization.
-> GUI integration and Insider Scan module are planned for subsequent phases.
+> **Phase 2B complete**: Full dark-themed GUI — Backtest tab, ML tab, dynamic settings dialogs, matplotlib embedding, pytest-qt tests.
+
+---
+
+## GUI
+
+The desktop application uses a **dark Fusion theme** with three tabbed modules:
+
+### Backtest Tab
+- **Data loading**: Browse CSV, download from Yahoo Finance, or generate sample data
+- **Strategy selection**: Dropdown with all registered strategies
+- **Parameter editing**: Dynamic form dialog built from `parameters_schema()`
+- **Engine config**: Initial capital, commission/slippage in bps, short toggle
+- **Run backtest**: Background execution with progress bar, equity curve chart, metrics panel, sortable trades table
+- **Optimize**: Optuna parameter search (100 trials) with best params auto-applied
+
+### ML Tab
+- **Multi-dataset support**: Load multiple OHLCV sources for combined training
+- **Feature selection**: Checkboxes for each feature builder with adjustable lag counts, live input-dim display
+- **Architecture config**: Layers, units, activation, optimizer, LR, epochs, batch size, signal threshold
+- **Benchmark selector**: Dropdown to pick which dataset is the buy-and-hold comparison
+- **Train**: Background training with 4-panel results (loss, accuracy/MAE, train equity, val equity)
+- **Optimize**: Optuna hyperparameter search with best config auto-applied to UI
+
+### Launch
+
+```bash
+market-lab          # GUI entry point
+# or
+python -m market_lab.main
+```
 
 ---
 
@@ -97,8 +127,8 @@ src/market_lab/
 ├── data/          # Loaders, validators, Yahoo downloader, sample generator, Monte Carlo
 ├── backtest/      # Engine, metrics, reports, Optuna optimizer
 ├── strategies/    # Strategy plugin system + built-in strategies
-├── ml/            # Feature builders, model builder, trainer, optimizer (Phase 2)
-├── insiders/      # Source parsers, EDGAR resolver, merger (Phase 3)
+├── ml/            # Feature builders, model builder, trainer, optimizer
+├── gui/           # PySide6 desktop interface (Backtest, ML tabs)
 └── utils/         # Logging, caching, threading helpers, config
 ```
 
@@ -305,21 +335,13 @@ pytest -v                      # run all tests
 pytest --cov=market_lab -v     # with coverage
 ```
 
-133 tests covering: CSV schema parsing, sample generation, Monte Carlo variations, strategy execution, backtest engine correctness, metrics calculations, Optuna optimization, ML feature builders, dataset builder, model builder, trainer with equity curves, and ML hyperparameter optimization.
+153 tests covering: CSV schema parsing, sample generation, Monte Carlo variations, strategy execution, backtest engine correctness, metrics calculations, Optuna optimization, ML feature builders, dataset builder, model builder, trainer with equity curves, ML hyperparameter optimization, and GUI widget testing (matplotlib canvas, table models, dialogs, tabs, main window).
 
 ---
 
 ## CI/CD
 
 GitHub Actions runs tests on Ubuntu and Windows with Python 3.11 and 3.12. See `.github/workflows/ci.yml`.
-
----
-
-## Insider Scan (Phase 3 - planned)
-
-Sources: secform4.com, openinsider.com, SEC EDGAR verification.
-Rate limits: SEC requires max 10 req/s with proper User-Agent.
-Senate data: Congress member list from official sources; family disclosure data requires paid APIs (documented limitation).
 
 ---
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -9,50 +10,150 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
     QLabel,
     QSpinBox,
     QVBoxLayout,
 )
 
 
-class SettingsDialog(QDialog):
-    """Dialog that dynamically renders input controls from a parameter schema.
+class StrategySettingsDialog(QDialog):
+    """Modal dialog that dynamically builds input fields from a parameter schema.
 
-    Parameters
-    ----------
-    schema : dict
-        Strategy ``parameters_schema()`` output.
-    current_values : dict
-        Current parameter values (used to pre-fill controls).
-    title : str
-        Dialog window title.
+    Usage::
+
+        dlg = StrategySettingsDialog(schema, current_params, parent)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_params = dlg.get_params()
     """
 
-    def __init__(
-        self,
-        schema: dict,
-        current_values: dict | None = None,
-        title: str = "Strategy Settings",
-        parent=None,
-    ):
+    def __init__(self, schema: dict, current_params: dict, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(title)
+        self.setWindowTitle("Strategy Parameters")
         self.setMinimumWidth(380)
 
-        self._schema = schema
-        self._values = dict(current_values) if current_values else {}
         self._widgets: dict[str, object] = {}
+        self._schema = schema
 
         layout = QVBoxLayout(self)
-        form = QFormLayout()
 
-        for pname, pdef in schema.items():
-            widget = self._create_widget(pname, pdef)
-            label_text = pdef.get("description", pname)
-            form.addRow(QLabel(label_text + ":"), widget)
-            self._widgets[pname] = widget
+        grp = QGroupBox("Parameters")
+        form = QFormLayout(grp)
 
-        layout.addLayout(form)
+        for key, spec in schema.items():
+            ptype = spec.get("type", "float")
+            default = current_params.get(key, spec.get("default"))
+
+            if ptype == "int":
+                w = QSpinBox()
+                w.setMinimum(spec.get("min", 0))
+                w.setMaximum(spec.get("max", 999999))
+                if "step" in spec:
+                    w.setSingleStep(spec["step"])
+                w.setValue(int(default) if default is not None else 0)
+                self._widgets[key] = w
+
+            elif ptype == "float":
+                w = QDoubleSpinBox()
+                w.setDecimals(4)
+                w.setMinimum(spec.get("min", -1e9))
+                w.setMaximum(spec.get("max", 1e9))
+                if "step" in spec:
+                    w.setSingleStep(spec["step"])
+                w.setValue(float(default) if default is not None else 0.0)
+                self._widgets[key] = w
+
+            elif ptype == "bool":
+                w = QCheckBox()
+                w.setChecked(bool(default) if default is not None else True)
+                self._widgets[key] = w
+
+            elif ptype == "enum":
+                w = QComboBox()
+                choices = spec.get("choices", [])
+                w.addItems([str(c) for c in choices])
+                if default is not None and str(default) in [str(c) for c in choices]:
+                    w.setCurrentText(str(default))
+                self._widgets[key] = w
+
+            else:
+                w = QLabel(f"(unsupported type: {ptype})")
+                self._widgets[key] = w
+
+            label_text = key.replace("_", " ").title()
+            form.addRow(label_text + ":", w)
+
+        layout.addWidget(grp)
+
+        # OK / Cancel
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def get_params(self) -> dict:
+        """Read current widget values and return as a dict."""
+        params = {}
+        for key, widget in self._widgets.items():
+            spec = self._schema[key]
+            ptype = spec.get("type", "float")
+
+            if ptype == "int":
+                params[key] = widget.value()
+            elif ptype == "float":
+                params[key] = widget.value()
+            elif ptype == "bool":
+                params[key] = widget.isChecked()
+            elif ptype == "enum":
+                params[key] = widget.currentText()
+            else:
+                params[key] = spec.get("default")
+
+        return params
+
+
+class BacktestConfigDialog(QDialog):
+    """Dialog for backtest engine configuration (capital, commission, slippage)."""
+
+    def __init__(self, current: dict | None = None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Backtest Configuration")
+        self.setMinimumWidth(340)
+
+        current = current or {}
+        layout = QVBoxLayout(self)
+
+        grp = QGroupBox("Engine Settings")
+        form = QFormLayout(grp)
+
+        self.capital_spin = QDoubleSpinBox()
+        self.capital_spin.setRange(1_000, 100_000_000)
+        self.capital_spin.setDecimals(0)
+        self.capital_spin.setSingleStep(10_000)
+        self.capital_spin.setValue(current.get("initial_capital", 100_000))
+        form.addRow("Initial Capital:", self.capital_spin)
+
+        self.commission_spin = QDoubleSpinBox()
+        self.commission_spin.setRange(0, 100)
+        self.commission_spin.setDecimals(1)
+        self.commission_spin.setSuffix(" bps")
+        self.commission_spin.setValue(current.get("commission_bps", 5))
+        form.addRow("Commission:", self.commission_spin)
+
+        self.slippage_spin = QDoubleSpinBox()
+        self.slippage_spin.setRange(0, 100)
+        self.slippage_spin.setDecimals(1)
+        self.slippage_spin.setSuffix(" bps")
+        self.slippage_spin.setValue(current.get("slippage_bps", 2))
+        form.addRow("Slippage:", self.slippage_spin)
+
+        self.short_check = QCheckBox("Allow short positions")
+        self.short_check.setChecked(current.get("allow_short", True))
+        form.addRow(self.short_check)
+
+        layout.addWidget(grp)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -61,80 +162,10 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _create_widget(self, name: str, pdef: dict):
-        ptype = pdef.get("type", "float")
-        default = pdef.get("default")
-        current = self._values.get(name, default)
-
-        if ptype == "int":
-            w = QSpinBox()
-            w.setMinimum(int(pdef.get("min", 0)))
-            w.setMaximum(int(pdef.get("max", 999_999)))
-            w.setSingleStep(int(pdef.get("step", 1)))
-            if current is not None:
-                w.setValue(int(current))
-            return w
-
-        elif ptype == "float":
-            w = QDoubleSpinBox()
-            w.setMinimum(float(pdef.get("min", -999_999)))
-            w.setMaximum(float(pdef.get("max", 999_999)))
-            step = pdef.get("step")
-            if step:
-                w.setSingleStep(float(step))
-                # Set decimals based on step precision
-                dec = len(str(float(step)).rstrip("0").split(".")[-1])
-                w.setDecimals(max(dec, 2))
-            else:
-                w.setDecimals(4)
-                w.setSingleStep(0.01)
-            if current is not None:
-                w.setValue(float(current))
-            return w
-
-        elif ptype == "bool":
-            w = QCheckBox()
-            if current is not None:
-                w.setChecked(bool(current))
-            return w
-
-        elif ptype == "enum":
-            w = QComboBox()
-            choices = pdef.get("choices", [])
-            w.addItems([str(c) for c in choices])
-            if current is not None and str(current) in [str(c) for c in choices]:
-                w.setCurrentText(str(current))
-            return w
-
-        else:
-            # Fallback: read-only label
-            w = QLabel(str(current or ""))
-            return w
-
-    def get_values(self) -> dict:
-        """Return the parameter values from the dialog widgets."""
-        values = {}
-        for pname, pdef in self._schema.items():
-            widget = self._widgets[pname]
-            ptype = pdef.get("type", "float")
-
-            if ptype == "int":
-                values[pname] = widget.value()
-            elif ptype == "float":
-                values[pname] = widget.value()
-            elif ptype == "bool":
-                values[pname] = widget.isChecked()
-            elif ptype == "enum":
-                text = widget.currentText()
-                # Try to preserve original type
-                choices = pdef.get("choices", [])
-                for c in choices:
-                    if str(c) == text:
-                        values[pname] = c
-                        break
-                else:
-                    values[pname] = text
-            else:
-                values[pname] = self._values.get(pname)
-
-        return values
+    def get_config(self) -> dict:
+        return {
+            "initial_capital": self.capital_spin.value(),
+            "commission_bps": self.commission_spin.value(),
+            "slippage_bps": self.slippage_spin.value(),
+            "allow_short": self.short_check.isChecked(),
+        }

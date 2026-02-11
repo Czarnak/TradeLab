@@ -18,11 +18,12 @@ def main() -> None:
     import market_lab.strategies.mean_reversion  # noqa: F401
 
     from PySide6.QtWidgets import QApplication
-    from market_lab.gui.main_window import MainWindow
+    from market_lab.gui.main_window import MainWindow, apply_dark_theme
 
     app = QApplication(sys.argv)
     app.setApplicationName("Market-Lab")
     app.setOrganizationName("MarketLab")
+    apply_dark_theme(app)
 
     window = MainWindow()
     window.show()

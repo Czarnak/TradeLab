@@ -1,4 +1,4 @@
-"""CLI entry point for headless backtest and insider scan."""
+"""CLI entry point for headless backtest and optimization."""
 
 from __future__ import annotations
 
