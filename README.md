@@ -5,7 +5,8 @@ Desktop application integrating **strategy backtesting + optimization**, **ML mo
 Built with Python 3.11+, PySide6, and a clean modular architecture.
 
 > **Phase 1 complete**: Core data layer, backtest engine, strategies, metrics, optimization, CLI, tests, and CI.
-> ML module and Insider Scan module are planned for subsequent phases.
+> **Phase 2A complete**: ML module — feature builders, dataset builder, Keras model builder, trainer with equity curves, Optuna hyperparameter optimization.
+> GUI integration and Insider Scan module are planned for subsequent phases.
 
 ---
 
@@ -13,8 +14,8 @@ Built with Python 3.11+, PySide6, and a clean modular architecture.
 
 ```bash
 # Clone and create virtual environment
-git clone https://github.com/Czarnak/TradeLab.git
-
+git clone <repo-url> market-lab
+cd market-lab
 python -m venv .venv
 source .venv/bin/activate      # Linux/macOS
 # .venv\Scripts\activate       # Windows
@@ -175,6 +176,98 @@ results = generate_variations(
 
 ---
 
+## ML Model Builder
+
+Build, train, and optimize Keras Dense neural networks for market prediction.
+
+### Feature Builders
+
+| Name | Key | Description |
+|------|-----|-------------|
+| Close last N bars | `close_lags` | Raw close prices |
+| Open last N bars | `open_lags` | Raw open prices |
+| Log return last N bars | `return_lags` | ln(close/prev_close) |
+| High-Low range last N bars | `hl_range_lags` | Volatility proxy |
+| Volume last N bars | `volume_lags` | Trading volume |
+
+### Programmatic Usage
+
+```python
+from market_lab.data.sample_generator import generate_ohlcv_bars
+from market_lab.ml.dataset_builder import FeatureSelection, DatasetConfig, build_dataset
+from market_lab.ml.model_builder import build_model, default_classification_config
+from market_lab.ml.trainer import train_model, compute_equity_curves, save_training_result
+
+# 1. Prepare data
+bars = generate_ohlcv_bars(n_bars=500, seed=42)
+
+# 2. Build dataset
+ds_config = DatasetConfig(
+    feature_selections=[
+        FeatureSelection("return_lags", n_lags=10),
+        FeatureSelection("volume_lags", n_lags=5),
+    ],
+    task_type="classification",
+    split_ratio=0.8,
+)
+dataset = build_dataset([bars], ds_config)
+
+# 3. Build and train model
+model_config = default_classification_config(dataset.input_dim)
+model = build_model(model_config)
+result = train_model(model, dataset, model_config)
+
+# 4. Compute equity curves (model vs buy-and-hold benchmark)
+compute_equity_curves(result, [bars], threshold=0.5, benchmark_dataset_idx=0)
+
+# 5. Save everything
+save_training_result(result)
+```
+
+### ML Hyperparameter Optimization
+
+```python
+from market_lab.ml.optimizer import optimize_ml
+
+opt_result = optimize_ml(
+    dataset=dataset,
+    bars_list=[bars],
+    objective="val_accuracy",  # or "val_sharpe"
+    n_trials=50,
+)
+print(f"Best accuracy: {opt_result['best_value']:.4f}")
+print(f"Best config: {opt_result['best_config'].to_dict()}")
+```
+
+Optuna searches over: number of layers (1-4), units per layer, activation functions, optimizer, learning rate, epochs, batch size, and classification threshold.
+
+### How to Add New ML Feature Definitions
+
+1. Create a class in `src/market_lab/ml/input_definitions.py` subclassing `FeatureBuilder`
+2. Implement `name`, `display_name`, and `build_features(bars, n_lags)`
+3. Call `register_feature(MyFeature())` at module level
+
+```python
+from market_lab.ml.input_definitions import FeatureBuilder, register_feature
+
+class RSIFeature(FeatureBuilder):
+    @property
+    def name(self) -> str:
+        return "rsi"
+
+    @property
+    def display_name(self) -> str:
+        return "RSI last N bars"
+
+    def build_features(self, bars, n_lags):
+        # Your RSI implementation here
+        ...
+
+register_feature(RSIFeature())
+```
+
+---
+
 ## Outputs Directory Structure
 
 ```
@@ -185,7 +278,19 @@ outputs/
 │   ├── equity.csv
 │   ├── equity_curve.png
 │   └── report.md
-├── ml/<run_id>/           # (Phase 2)
+├── ml/<run_id>/
+│   ├── model.keras
+│   ├── config.json
+│   ├── training_history.json
+│   ├── summary.json
+│   ├── accuracy.png
+│   ├── loss.png
+│   ├── train_equity.png
+│   └── val_equity.png
+├── ml_optimizations/
+│   ├── best_config.json
+│   ├── best_params.json
+│   └── trials.csv
 └── optimizations/
     ├── best_params.json
     └── trials.csv
@@ -200,7 +305,7 @@ pytest -v                      # run all tests
 pytest --cov=market_lab -v     # with coverage
 ```
 
-70 tests covering: CSV schema parsing, sample generation, Monte Carlo variations, strategy execution, backtest engine correctness, metrics calculations, and Optuna optimization.
+133 tests covering: CSV schema parsing, sample generation, Monte Carlo variations, strategy execution, backtest engine correctness, metrics calculations, Optuna optimization, ML feature builders, dataset builder, model builder, trainer with equity curves, and ML hyperparameter optimization.
 
 ---
 
