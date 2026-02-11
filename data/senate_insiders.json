@@ -1,0 +1,35 @@
+{
+  "description": "U.S. Congress members tracked for insider trading scans.",
+  "last_updated": null,
+  "members": [
+    {
+      "name": "Nancy Pelosi",
+      "chamber": "House",
+      "state": "CA",
+      "party": "D",
+      "family": []
+    },
+    {
+      "name": "Dan Crenshaw",
+      "chamber": "House",
+      "state": "TX",
+      "party": "R",
+      "family": []
+    },
+    {
+      "name": "Tommy Tuberville",
+      "chamber": "Senate",
+      "state": "AL",
+      "party": "R",
+      "family": []
+    },
+    {
+      "name": "Mark Green",
+      "chamber": "House",
+      "state": "TN",
+      "party": "R",
+      "family": []
+    }
+  ],
+  "notes": "Family field is empty — reliable family disclosure data requires paid APIs. See README."
+}

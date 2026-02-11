@@ -1,0 +1,18 @@
+PySide6>=6.6
+pandas>=2.1
+numpy>=1.25
+yfinance>=0.2.31
+optuna>=3.4
+matplotlib>=3.8
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=4.9
+tenacity>=8.2
+tensorflow-cpu>=2.15
+pyarrow>=14.0
+
+# Dev dependencies
+pytest>=7.4
+pytest-cov>=4.1
+pytest-qt>=4.2
+responses>=0.24
