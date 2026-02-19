@@ -1,82 +1,56 @@
-"""Abstract indicator interface."""
-
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
-from typing import Any
-
 import pandas as pd
+from trade_lab.signals.base import BaseSignal
 
-class Indicator(ABC):
-    """Base class all indicators must implement."""
+
+class BaseIndicator(ABC):
+    """
+    Input:  One or more Signals (computed sequentially before indicator runs).
+    Output: DataFrame with new indicator columns appended.
+
+    Separation of concerns:
+        compute()           → raw indicator values (e.g. RSI 0-100)
+        to_signal_strength() → interpretation mapped to [-1.0, 1.0]
+
+    This separation means the same indicator can be interpreted
+    differently by different strategies.
+    """
+
+    def __init__(self, *signals: BaseSignal):
+        self.signals = signals
+
+    def get_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Compute all upstream signals sequentially."""
+        for signal in self.signals:
+            df = signal.compute(df)
+        return df
+
+    @abstractmethod
+    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute indicator values and append to df.
+        Must call get_data() internally.
+        Convention: 'indicator__<name>'
+        """
+        ...
+
+    @abstractmethod
+    def to_signal_strength(self, df: pd.DataFrame) -> pd.Series:
+        """
+        Map indicator values to [-1.0, 1.0].
+        -1.0 = maximum bearish conviction
+         0.0 = neutral
+        +1.0 = maximum bullish conviction
+        """
+        ...
+
+    @abstractmethod
+    def plot(self, df: pd.DataFrame, ax=None):
+        """Visualise indicator output on given axes."""
+        ...
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        """Human-readable indicator name."""
+    def output_columns(self) -> list[str]:
+        """Declare which columns this indicator appends."""
         ...
-
-    @abstractmethod
-    def parameters_schema(self) -> dict:
-        """Return a JSON-schema-like dict describing tunable parameters.
-
-        Each key is a parameter name. Value is a dict with:
-        - ``type``: ``"int"`` | ``"float"`` | ``"bool"`` | ``"enum"``
-        - ``default``: default value
-        - ``min``, ``max``, ``step`` (optional, for numeric)
-        - ``choices`` (for enum)
-        - ``description`` (optional)
-        """
-        ...
-
-    @abstractmethod
-    def run(self, bars: pd.DataFrame, params: dict) -> pd.Series:
-        """Calculate the indicator values on OHLCV bars with given parameters.
-
-        Parameters
-        ----------
-        bars : pd.DataFrame
-            Canonical OHLCV DataFrame.
-        params : dict
-            Parameter values (matching ``parameters_schema`` keys).
-
-        Returns
-        -------
-        pd.Series
-            Indicator values aligned to bars index.
-        """
-        ...
-
-    @abstractmethod
-    def plot(self, indicator_values: pd.Series, params: dict) -> Any:
-        """Return a plotly figure for the indicator values."""
-        ...
-
-
-# ---------------------------------------------------------------------------
-# Indicators registry (discover all built-in indicators)
-# ---------------------------------------------------------------------------
-
-_REGISTRY: dict[str, Indicator] = {}
-
-
-def register_indicator(indicator: Indicator) -> None:
-    """Register a indicator instance in the global registry."""
-    _REGISTRY[indicator.name] = indicator
-
-
-def get_indicator(name: str) -> Indicator:
-    """Retrieve a registered indicator by name."""
-    if name not in _REGISTRY:
-        raise KeyError(f"Indicator '{name}' not registered. Available: {list(_REGISTRY.keys())}")
-    return _REGISTRY[name]
-
-
-def list_indicators() -> list[str]:
-    """Return names of all registered indicators."""
-    return list(_REGISTRY.keys())
-
-
-def all_indicators() -> dict[str, Indicator]:
-    """Return the full registry dict."""
-    return dict(_REGISTRY)

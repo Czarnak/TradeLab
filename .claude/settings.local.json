@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(git ls-tree:*)",
+      "Read(//c/Users/lukas/Documents/RND/TradeLab/**)",
+      "Bash(find:*)"
+    ]
+  }
+}

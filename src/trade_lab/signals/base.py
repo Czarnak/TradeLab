@@ -1,69 +1,45 @@
-"""Base signals definitions, used then to calculate Signal values."""
-
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
-from typing import Any
-
 import pandas as pd
 
-class Signal(ABC):
-    """Base class all signals must implement."""
 
-    @property
+class BaseSignal(ABC):
+    """
+    Input:  OHLCV DataFrame or output of another Signal.
+    Output: DataFrame with new columns appended.
+
+    Signals may be chained via the source parameter.
+    CyclicalTemporalSignal is an exception — it reads from df.index
+    and never accepts a source.
+    """
+
+    def __init__(self, source: 'BaseSignal | None' = None):
+        self.source = source
+
+    def get_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Resolve upstream signal chain before computing."""
+        if self.source is not None:
+            return self.source.compute(df)
+        return df
+
     @abstractmethod
-    def name(self) -> str:
-        """Human-readable signal name."""
-        ...
-
-    @abstractmethod
-    def run(self, bars: pd.DataFrame) -> pd.DataFrame:
-        """Calculate the signal values on OHLCV bars.
-
-        Parameters
-        ----------
-        bars : pd.DataFrame
-            Canonical OHLCV DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame
-            Signal values aligned to bars index.
+    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute signal and append output columns to df.
+        Must call get_data() internally to respect chaining.
         """
         ...
 
     @abstractmethod
-    def plot(self, signal_values: pd.Series) -> Any:
-        """Return a plotly figure for the signal."""
+    def plot(self, df: pd.DataFrame):
+        """Visualise this signal's output columns."""
         ...
 
-
-# ---------------------------------------------------------------------------
-# Signals registry (discover all built-in Signals)
-# ---------------------------------------------------------------------------
-
-_REGISTRY: dict[str, Signal] = {}
-
-
-def register_Signal(signal: Signal) -> None:
-    """Register a Signal instance in the global registry."""
-    _REGISTRY[signal.name] = signal
-
-
-def get_Signal(name: str) -> Signal:
-    """Retrieve a registered Signal by name."""
-    if name not in _REGISTRY:
-        raise KeyError(f"Signal '{name}' not registered. Available: {list(_REGISTRY.keys())}")
-    return _REGISTRY[name]
-
-
-def list_Signals() -> list[str]:
-    """Return names of all registered Signals."""
-    return list(_REGISTRY.keys())
-
-
-def all_Signals() -> dict[str, Signal]:
-    """Return the full registry dict."""
-    return dict(_REGISTRY)
-
-
+    @property
+    @abstractmethod
+    def output_columns(self) -> list[str]:
+        """
+        Declare which columns this signal appends.
+        Used for validation and ML feature resolution.
+        Convention: 'signal__<name>'
+        """
+        ...

@@ -308,5 +308,4 @@ __marimo__/
 
 *.csv
 *.xlsx
-/translate/api_key.txt
-/stateCongess_apiKey.txt
+playground.ipynb
