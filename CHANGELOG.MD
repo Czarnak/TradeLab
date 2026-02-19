@@ -4,16 +4,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## [Unreleased]
-
-### Added
-- Documentation badges for CI, Python version, and license in `README.md`.
-- New `API Reference` section in `README.md` with direct links to core modules.
-- New `Roadmap` section in `README.md` covering planned project directions.
-
 ## [0.1.0] - 2026-02-19
 
 ### Added
+
 - Initial `trade_lab` package structure with modular domains:
   - `backtesting` (`engine.py`, `metrics.py`, `report.py`)
   - `strategies` (`base.py`, `standard.py`, `ml_strategy.py`)

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 import pandas as pd
-from trade_lab.indicators.base import BaseIndicator
 from trade_lab.sizing.base import BasePositionSizer
 
 
