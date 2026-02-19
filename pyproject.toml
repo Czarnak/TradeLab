@@ -1,46 +1,51 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
-name = "market-lab"
+name = "TradeLab"
 version = "0.1.0"
-description = "Desktop GUI integrating strategy backtesting, ML model building, and optimization."
+description = "A modular framework for backtesting trading strategies"
 readme = "README.md"
-requires-python = ">=3.11"
-license = {text = "MIT"}
-authors = [{name = "Market-Lab Contributors"}]
-
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Łukasz Rafał Czarnacki", email = "czarnacki.lukasz.rafal@com" }
+]
+keywords = ["trading", "backtesting", "finance", "algorithmic-trading"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
 dependencies = [
-    "PySide6>=6.6",
-    "pandas>=2.1",
-    "numpy>=1.25",
-    "yfinance>=0.2.31",
-    "optuna>=3.4",
-    "matplotlib>=3.8",
-    "requests>=2.31",
-    "beautifulsoup4>=4.12",
-    "lxml>=4.9",
-    "tenacity>=8.2",
-    "tensorflow-cpu>=2.15",
-    "pyarrow>=14.0",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "yfinance>=0.2",
+    "matplotlib>=3.7",
+    "scipy>=1.10",
 ]
 
 [project.optional-dependencies]
+ml = [
+    "tensorflow>=2.13",
+    "keras>=2.13",
+]
 dev = [
-    "pytest>=7.4",
-    "pytest-cov>=4.1",
-    "pytest-qt>=4.2",
-    "responses>=0.24",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
 ]
 
-[project.scripts]
-market-lab = "market_lab.main:main"
-market-lab-cli = "market_lab.cli:main"
+[project.urls]
+Homepage = "https://github.com/Czarnak/TradeLab"
+Repository = "https://github.com/Czarnak/TradeLab"
+Issues = "https://github.com/Czarnak/TradeLab/issues"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-v --tb=short"
+[tool.hatch.build.targets.wheel]
+packages = ["trade_lab"]

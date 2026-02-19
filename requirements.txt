@@ -1,15 +1,8 @@
-PySide6>=6.6
-pandas>=2.1
+pandas>=3.0.0
 numpy>=1.25
-yfinance>=0.2.31
-optuna>=3.4
-matplotlib>=3.8
-requests>=2.31
-beautifulsoup4>=4.12
-lxml>=4.9
-tenacity>=8.2
-tensorflow-cpu>=2.15
-pyarrow>=14.0
+yfinance>=1.2.0
+plotly>=6.0.0
+plotly-stubs>=0.1.2
 
 # Dev dependencies
 pytest>=7.4
