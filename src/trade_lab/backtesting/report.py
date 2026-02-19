@@ -111,7 +111,7 @@ def generate_report(
     fig.update_layout(height=900, title_text='Backtest Report', showlegend=True)
 
     # ---- Assemble HTML ----
-    metrics_table = _format_metrics_table(result.metrics)
+    metrics_table = _format_metrics_tables(result.metrics)
     chart_html = fig.to_html(include_plotlyjs='cdn', full_html=False)
 
     html = (
@@ -121,7 +121,13 @@ def generate_report(
         '<style>\n'
         'body { font-family: Arial, sans-serif; margin: 20px; background: #fafafa; }\n'
         'h1 { color: #333; }\n'
-        'table { border-collapse: collapse; margin: 20px 0; }\n'
+        '.metrics-grid { '
+        'display: grid; '
+        'grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); '
+        'gap: 20px; margin: 20px 0; '
+        '}\n'
+        '.metrics-card h2 { margin: 0 0 8px 0; color: #333; font-size: 1.05rem; }\n'
+        'table { border-collapse: collapse; width: 100%; background: white; }\n'
         'th, td { border: 1px solid #ddd; padding: 8px 16px; text-align: right; }\n'
         'th { background: #f5f5f5; text-align: left; }\n'
         '.pos { color: #2e7d32; }\n'
@@ -143,7 +149,7 @@ def generate_report(
 # Internal helpers
 # ------------------------------------------------------------------
 
-_METRIC_FORMAT = [
+_METRIC_FORMAT_MAIN = [
     ('total_return',      'Total Return',       '{:.2%}',      True),
     ('annualized_return', 'Annualized Return',  '{:.2%}',      True),
     ('sharpe_ratio',      'Sharpe Ratio',       '{:.2f}',      True),
@@ -159,10 +165,19 @@ _METRIC_FORMAT = [
     ('total_commission',  'Total Commission',   '${:,.2f}',    False),
 ]
 
+_METRIC_FORMAT_DIRECTIONAL = [
+    ('long_win_rate',   'Long Win Rate',   '{:.1%}',   False),
+    ('long_avg_win',    'Long Avg Profit', '${:,.2f}', True),
+    ('long_avg_loss',   'Long Avg Loss',   '${:,.2f}', True),
+    ('short_win_rate',  'Short Win Rate',  '{:.1%}',   False),
+    ('short_avg_win',   'Short Avg Profit','${:,.2f}', True),
+    ('short_avg_loss',  'Short Avg Loss',  '${:,.2f}', True),
+]
 
-def _format_metrics_table(metrics: dict) -> str:
+
+def _format_metrics_table(metrics: dict, metric_format: list[tuple]) -> str:
     rows: list[str] = []
-    for key, label, fmt, colorise in _METRIC_FORMAT:
+    for key, label, fmt, colorise in metric_format:
         val = metrics.get(key, 0)
         formatted = fmt.format(val)
         css = ''
@@ -170,3 +185,20 @@ def _format_metrics_table(metrics: dict) -> str:
             css = ' class="pos"' if val > 0 else ' class="neg"' if val < 0 else ''
         rows.append(f'<tr><th>{label}</th><td{css}>{formatted}</td></tr>')
     return f'<table>{"".join(rows)}</table>'
+
+
+def _format_metrics_tables(metrics: dict) -> str:
+    main_table = _format_metrics_table(metrics, _METRIC_FORMAT_MAIN)
+    directional_table = _format_metrics_table(metrics, _METRIC_FORMAT_DIRECTIONAL)
+    return (
+        '<div class="metrics-grid">'
+        '<section class="metrics-card">'
+        '<h2>Overall Metrics</h2>'
+        f'{main_table}'
+        '</section>'
+        '<section class="metrics-card">'
+        '<h2>Long / Short Breakdown</h2>'
+        f'{directional_table}'
+        '</section>'
+        '</div>'
+    )

@@ -2,6 +2,21 @@ import numpy as np
 import pandas as pd
 
 
+def _direction_stats(trade_log: pd.DataFrame, direction: str) -> tuple[float, float, float]:
+    """Return (win_rate, avg_win, avg_loss) for a direction."""
+    trades = trade_log[trade_log['direction'] == direction]
+    if len(trades) == 0:
+        return 0.0, 0.0, 0.0
+
+    winners = trades[trades['pnl'] > 0]
+    losers = trades[trades['pnl'] <= 0]
+
+    win_rate = len(winners) / len(trades)
+    avg_win = winners['pnl'].mean() if len(winners) > 0 else 0.0
+    avg_loss = losers['pnl'].mean() if len(losers) > 0 else 0.0
+    return win_rate, avg_win, avg_loss
+
+
 def compute_metrics(
     equity_curve: pd.Series,
     trade_log: pd.DataFrame,
@@ -73,6 +88,9 @@ def compute_metrics(
         avg_bars = 0.0
         total_commission = 0.0
 
+    long_win_rate, long_avg_win, long_avg_loss = _direction_stats(trade_log, 'long')
+    short_win_rate, short_avg_win, short_avg_loss = _direction_stats(trade_log, 'short')
+
     return {
         'total_return': total_return,
         'annualized_return': annualized_return,
@@ -87,4 +105,10 @@ def compute_metrics(
         'avg_loss': avg_loss,
         'avg_trade_bars': avg_bars,
         'total_commission': total_commission,
+        'long_win_rate': long_win_rate,
+        'short_win_rate': short_win_rate,
+        'long_avg_win': long_avg_win,
+        'long_avg_loss': long_avg_loss,
+        'short_avg_win': short_avg_win,
+        'short_avg_loss': short_avg_loss,
     }

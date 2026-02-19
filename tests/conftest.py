@@ -20,15 +20,22 @@ except ModuleNotFoundError:
         def show(self, *args, **kwargs):
             return None
 
+        def to_html(self, *args, **kwargs):
+            return "<div></div>"
+
     class _DummyScatter:
         def __init__(self, *args, **kwargs):
             pass
 
     plotly = types.ModuleType("plotly")
     graph_objects = types.ModuleType("graph_objects")
+    subplots = types.ModuleType("subplots")
     graph_objects.Figure = _DummyFigure
     graph_objects.Scatter = _DummyScatter
+    subplots.make_subplots = lambda *args, **kwargs: _DummyFigure()
     plotly.graph_objects = graph_objects
+    plotly.subplots = subplots
 
     sys.modules["plotly"] = plotly
     sys.modules["plotly.graph_objects"] = graph_objects
+    sys.modules["plotly.subplots"] = subplots
