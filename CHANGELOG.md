@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [0.4.0] - 2026-02-20
+
+### Added
+
+- `ml_optimization` module for Keras model feature selection and optimization:
+  - `feature_builder.py`:
+    - `LaggedIndicator` — composes any `BaseIndicator` with configurable lags.
+      Lag 0 always included. Column convention: `indicator__ema_20__lag_3`.
+    - `FeatureMatrix` — assembles lagged feature matrices from a list of
+      `LaggedIndicator` instances. Computes log forward return as target `y`.
+      Fits `StandardScaler` on training data; applies (never refits) on
+      val/test. Exposes `feature_names` and `scaler` for deployment.
+  - `search_space.py`:
+    - `IndicatorSpec` — descriptor for one candidate indicator in the search:
+      class, period range, lag range, max lags (default 5), optional flag.
+  - `objective.py`:
+    - `MLObjective` — picklable Optuna objective. Per trial: samples indicator
+      config, builds feature matrices, trains Keras model with
+      `KerasPruningCallback` (pruning on val_loss), evaluates via full
+      backtest, returns chosen metric. Stores feature spec in trial user attrs
+      for best-trial reconstruction.
+  - `optimizer.py`:
+    - `MLOptimizer` — orchestrates Optuna study with `MedianPruner`. After
+      search, retrains best configuration from scratch for full `n_epochs`.
+      Evaluates on val_df and optional test_df. Supports parallel workers
+      via SQLite storage (same pattern as `OptunaOptimizer`).
+  - `result.py`:
+    - `MLOptimizationResult` — dataclass with `best_model`, `best_strategy`,
+      `best_feature_spec`, `scaler`, `feature_names`, `val_metrics`,
+      `test_metrics`, `train_df`, trial counts, and `summary()`.
+  - `pruning.py`:
+    - `ModelPruner` — post-training weight pruning. Two modes: global
+      threshold (one cutoff across all layers) and per-layer percentile
+      (bottom N% zeroed per layer). Dead feature detection on first Dense
+      layer. `prune_model()` operates on raw Keras model; `prune_result()`
+      operates on `MLOptimizationResult`, handles filtered feature spec,
+      scaler refit, and fine-tuning of surviving weights.
+- `scikit-learn>=1.3` added to `[ml]` optional extras in `pyproject.toml`.
+
 ## [0.3.1] - 2026-02-20
 
 ### Fixed

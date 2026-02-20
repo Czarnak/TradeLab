@@ -41,6 +41,10 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
   - indicator weight search,
   - optional train/validation split for out-of-sample evaluation,
   - parallel multi-process search (SQLite-backed).
+- ML optimisation:
+  - indicator inclusion/period/lag search,
+  - Keras model training inside Optuna trials,
+  - optional post-search model pruning.
 
 ## Installation
 
@@ -243,6 +247,53 @@ check. For metrics where higher is better (e.g. Sharpe ratio):
 
 For metrics where lower is better (e.g. `max_drawdown`), invert the interpretation.
 
+## ML Optimisation
+
+`trade_lab.ml_optimization` combines indicator search, Keras training, and
+backtest-driven objective evaluation.
+
+```python
+from trade_lab.indicators import EMA, RSI
+from trade_lab.ml_optimization import IndicatorSpec, MLOptimizer
+
+specs = [
+    IndicatorSpec("ema", EMA, period_low=5, period_high=50, lag_low=0, lag_high=10, max_lags=3, optional=False),
+    IndicatorSpec("rsi", RSI, period_low=7, period_high=28, lag_low=0, lag_high=5, max_lags=2, optional=True),
+]
+
+def build_model(n_features: int):
+    import keras
+    model = keras.Sequential([
+        keras.layers.Dense(32, activation="relu", input_shape=(n_features,)),
+        keras.layers.Dense(1, activation="tanh"),
+    ])
+    model.compile(optimizer="adam", loss="mse")
+    return model
+
+ml_result = MLOptimizer(
+    indicator_specs=specs,
+    model_factory=build_model,
+    train_df=train_df,
+    val_df=val_df,
+    test_df=test_df,
+    metric="sharpe_ratio",
+    n_trials=30,
+    n_epochs=15,
+).optimize()
+
+print(ml_result.summary())
+```
+
+Optional pruning:
+
+```python
+from trade_lab.ml_optimization import ModelPruner
+
+pruner = ModelPruner(percentile=20)
+pruned_result, report = pruner.prune_result(ml_result)
+print(report["zero_fraction"], report["dead_features"])
+```
+
 ## Core Concepts
 
 ### Signals
@@ -334,6 +385,12 @@ Core modules:
 - [`src/trade_lab/optimization/objective.py`][api-opt-objective]
 - [`src/trade_lab/optimization/optimizer.py`][api-opt-optimizer]
 - [`src/trade_lab/optimization/result.py`][api-opt-result]
+- [`src/trade_lab/ml_optimization/search_space.py`][api-mlopt-search]
+- [`src/trade_lab/ml_optimization/feature_builder.py`][api-mlopt-features]
+- [`src/trade_lab/ml_optimization/objective.py`][api-mlopt-objective]
+- [`src/trade_lab/ml_optimization/optimizer.py`][api-mlopt-optimizer]
+- [`src/trade_lab/ml_optimization/pruning.py`][api-mlopt-pruning]
+- [`src/trade_lab/ml_optimization/result.py`][api-mlopt-result]
 
 Examples:
 
@@ -404,4 +461,10 @@ MIT
 [api-opt-objective]: src/trade_lab/optimization/objective.py
 [api-opt-optimizer]: src/trade_lab/optimization/optimizer.py
 [api-opt-result]: src/trade_lab/optimization/result.py
+[api-mlopt-search]: src/trade_lab/ml_optimization/search_space.py
+[api-mlopt-features]: src/trade_lab/ml_optimization/feature_builder.py
+[api-mlopt-objective]: src/trade_lab/ml_optimization/objective.py
+[api-mlopt-optimizer]: src/trade_lab/ml_optimization/optimizer.py
+[api-mlopt-pruning]: src/trade_lab/ml_optimization/pruning.py
+[api-mlopt-result]: src/trade_lab/ml_optimization/result.py
 [example-ema]: examples/simple_ema_strategy.py

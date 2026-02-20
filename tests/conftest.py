@@ -81,6 +81,14 @@ except ModuleNotFoundError:
         def __init__(self, *args, **kwargs):
             pass
 
+    class _DummyMedianPruner:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _DummyKerasPruningCallback:
+        def __init__(self, *args, **kwargs):
+            pass
+
     def _dummy_create_study(*args, **kwargs):
         return _DummyStudy()
 
@@ -94,9 +102,17 @@ except ModuleNotFoundError:
 
     optuna.Study = _DummyStudy
     optuna.Trial = object
+    optuna.TrialPruned = _TrialPruned
     optuna.create_study = _dummy_create_study
     optuna.logging = _Logging
     optuna.exceptions = types.SimpleNamespace(TrialPruned=_TrialPruned)
     optuna.samplers = types.SimpleNamespace(TPESampler=_DummyTPESampler)
+    optuna.pruners = types.SimpleNamespace(MedianPruner=_DummyMedianPruner)
     optuna.trial = types.SimpleNamespace(TrialState=_TrialState)
+
+    integration = types.ModuleType("integration")
+    integration.KerasPruningCallback = _DummyKerasPruningCallback
+    optuna.integration = integration
+
     sys.modules["optuna"] = optuna
+    sys.modules["optuna.integration"] = integration
