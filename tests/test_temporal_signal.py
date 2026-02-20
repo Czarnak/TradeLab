@@ -34,3 +34,12 @@ def test_temporal_signal_rejects_unknown_component():
 def test_temporal_signal_rejects_non_positive_period():
     with pytest.raises(ValueError, match="period must be positive"):
         CyclicalTemporalSignal(component="month", period=0)
+
+
+def test_temporal_signal_plot_runs_without_error():
+    index = pd.date_range("2026-01-01", periods=4, freq="D")
+    df = pd.DataFrame({"close": [1.0, 2.0, 3.0, 4.0]}, index=index)
+    signal = CyclicalTemporalSignal(component="day_of_week", period=7)
+    out = signal.compute(df.copy())
+
+    signal.plot(out)

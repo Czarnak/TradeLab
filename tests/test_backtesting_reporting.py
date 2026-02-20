@@ -59,3 +59,21 @@ def test_report_metrics_tables_include_responsive_grid_and_breakdown():
     assert "Long / Short Breakdown" in html
     assert "Long Win Rate" in html
     assert "Short Avg Loss" in html
+
+
+def test_compute_metrics_handles_empty_trade_log():
+    equity_curve = pd.Series(
+        [100_000.0, 99_000.0, 101_000.0],
+        index=pd.date_range("2026-01-01", periods=3, freq="D"),
+    )
+    trade_log = pd.DataFrame(columns=["direction", "pnl", "bars_held", "commission"])
+
+    metrics = compute_metrics(equity_curve, trade_log)
+
+    assert metrics["total_trades"] == 0
+    assert metrics["win_rate"] == 0.0
+    assert metrics["profit_factor"] == 0.0
+    assert metrics["avg_trade_bars"] == 0.0
+    assert metrics["total_commission"] == 0.0
+    assert metrics["long_win_rate"] == 0.0
+    assert metrics["short_win_rate"] == 0.0

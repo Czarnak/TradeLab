@@ -24,13 +24,20 @@ class BacktestEngine:
     a ``signal_strength`` column, then simulates trading bar-by-bar
     using the strategy's entry/exit thresholds.
 
+    ``ticker``, ``start``, and ``end`` are only required when calling
+    ``run()`` or ``fetch_data()``. They may be omitted when the engine
+    is used exclusively via ``run_on(df)`` — for example inside an
+    optimisation loop where data is fetched once and reused across trials.
+
     Parameters
     ----------
-    strategy : BaseStrategy
-    ticker : str
-        Yahoo Finance ticker symbol.
-    start, end : str
-        Date strings (e.g. ``'2020-01-01'``).
+    strategy : BaseStrategy | None
+        Trading strategy used by ``run()`` / ``run_on()``.
+        May be ``None`` when using the engine only for ``fetch_data()``.
+    ticker : str | None
+        Yahoo Finance ticker symbol. Required for ``run()`` / ``fetch_data()``.
+    start, end : str | None
+        Date strings (e.g. ``'2020-01-01'``). Required for ``run()`` / ``fetch_data()``.
     initial_capital : float
     commission : float
         Proportional commission rate (default 0.1%).
@@ -40,10 +47,10 @@ class BacktestEngine:
 
     def __init__(
         self,
-        strategy: BaseStrategy,
-        ticker: str,
-        start: str,
-        end: str,
+        strategy: BaseStrategy | None = None,
+        ticker: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
         initial_capital: float = 100_000.0,
         commission: float = 0.001,
         slippage: float = 0.0005,
@@ -57,9 +64,48 @@ class BacktestEngine:
         self.slippage = slippage
 
     def run(self) -> BacktestResult:
-        """Execute the full backtest pipeline."""
+        """Execute the full backtest pipeline including data download.
+
+        Raises
+        ------
+        ValueError
+            If ``ticker``, ``start``, or ``end`` were not provided at construction.
+        """
+        if self.strategy is None:
+            raise ValueError(
+                "BacktestEngine.run()/run_on() requires a strategy. "
+                "Set strategy= at construction or assign engine.strategy before calling run."
+            )
+        if not self.ticker or not self.start or not self.end:
+            raise ValueError(
+                "BacktestEngine.run() requires ticker, start, and end to be set. "
+                "Use run_on(df) if you are supplying data directly."
+            )
         df = self._fetch_data()
-        df = self.strategy.generate_signals(df)
+        return self.run_on(df)
+
+    def run_on(self, df: pd.DataFrame) -> BacktestResult:
+        """Execute the backtest pipeline on a pre-built OHLCV DataFrame.
+
+        Skips data download entirely. Useful for Monte Carlo simulations,
+        walk-forward testing, or any context where data is sourced externally.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            OHLCV DataFrame with columns: Open, High, Low, Close, Volume.
+            The index should be a DatetimeIndex.
+
+        Returns
+        -------
+        BacktestResult
+        """
+        if self.strategy is None:
+            raise ValueError(
+                "BacktestEngine.run()/run_on() requires a strategy. "
+                "Set strategy= at construction or assign engine.strategy before calling run."
+            )
+        df = self.strategy.generate_signals(df.copy())
         equity_curve, trade_log = self._simulate(df)
         metrics = compute_metrics(equity_curve, trade_log)
         return BacktestResult(
@@ -68,6 +114,27 @@ class BacktestEngine:
             trade_log=trade_log,
             metrics=metrics,
         )
+
+    def fetch_data(self) -> pd.DataFrame:
+        """Download and return the OHLCV DataFrame without running the backtest.
+
+        Useful for obtaining the original data to pass into MonteCarloRunner.run().
+
+        Returns
+        -------
+        pd.DataFrame
+            OHLCV DataFrame for the configured ticker and date range.
+
+        Raises
+        ------
+        ValueError
+            If ``ticker``, ``start``, or ``end`` were not provided at construction.
+        """
+        if not self.ticker or not self.start or not self.end:
+            raise ValueError(
+                "BacktestEngine.fetch_data() requires ticker, start, and end to be set."
+            )
+        return self._fetch_data()
 
     # ------------------------------------------------------------------
     # Data
@@ -137,142 +204,87 @@ class BacktestEngine:
 
             # ---- Close existing position if triggered ----
             if pos > 0:  # long
-                should_exit = abs(sig) < xt
-                should_reverse = sig < -et and allow_short
-                if should_exit or should_reverse:
-                    cash, pos = self._close_long(
-                        cash, pos, price, entry_price, entry_comm,
-                        entry_date, dates[i], i, entry_bar, trades,
-                    )
+                if sig < xt or (allow_short and sig < -et):
+                    exec_price = price * (1 - self.slippage)
+                    comm = abs(pos) * exec_price * self.commission
+                    proceeds = pos * exec_price - comm
+                    pnl = proceeds - (pos * entry_price + entry_comm)
+                    cash += proceeds
+                    trades.append({
+                        'direction': 'long',
+                        'entry_date': entry_date,
+                        'exit_date': dates[i],
+                        'entry_price': entry_price,
+                        'exit_price': exec_price,
+                        'size': pos,
+                        'pnl': pnl,
+                        'commission': entry_comm + comm,
+                        'bars_held': i - entry_bar,
+                    })
+                    pos = 0.0
 
             elif pos < 0:  # short
-                should_exit = abs(sig) < xt
-                should_reverse = sig > et and allow_long
-                if should_exit or should_reverse:
-                    cash, pos = self._close_short(
-                        cash, pos, price, entry_price, entry_comm,
-                        entry_date, dates[i], i, entry_bar, trades,
-                    )
+                if sig > -xt or (allow_long and sig > et):
+                    exec_price = price * (1 + self.slippage)
+                    comm = abs(pos) * exec_price * self.commission
+                    cost = abs(pos) * exec_price + comm
+                    pnl = (abs(pos) * abs(entry_price)) - cost - entry_comm
+                    cash += abs(pos) * abs(entry_price) - cost
+                    trades.append({
+                        'direction': 'short',
+                        'entry_date': entry_date,
+                        'exit_date': dates[i],
+                        'entry_price': entry_price,
+                        'exit_price': exec_price,
+                        'size': abs(pos),
+                        'pnl': pnl,
+                        'commission': entry_comm + comm,
+                        'bars_held': i - entry_bar,
+                    })
+                    pos = 0.0
 
-            # ---- Open new position if now flat ----
+            # ---- Open new position if flat ----
             if pos == 0.0:
-                cur_equity = cash
-                atr_val = atr[i] if atr is not None else None
-
-                if sig > et and allow_long:
-                    exec_p = price * (1 + self.slippage)
-                    units = self._size(sig, cur_equity, exec_p, atr_val)
-                    max_afford = cash / (exec_p * (1 + self.commission))
-                    units = min(units, max_afford)
-                    if units > 0:
-                        comm = units * exec_p * self.commission
-                        cash -= units * exec_p + comm
-                        pos = units
-                        entry_price = exec_p
+                if allow_long and sig > et:
+                    exec_price = price * (1 + self.slippage)
+                    size = (
+                        self.strategy.position_sizer.compute_size(
+                            sig, cash, exec_price,
+                            volatility=atr[i] if atr is not None else None,
+                        )
+                        if has_sizer
+                        else cash / exec_price
+                    )
+                    if size > 0:
+                        comm = size * exec_price * self.commission
+                        cash -= size * exec_price + comm
+                        pos = size
+                        entry_price = exec_price
                         entry_date = dates[i]
                         entry_bar = i
                         entry_comm = comm
 
-                elif sig < -et and allow_short:
-                    exec_p = price * (1 - self.slippage)
-                    units = self._size(sig, cur_equity, exec_p, atr_val)
-                    max_units = cur_equity / (exec_p * (1 + self.commission))
-                    units = min(units, max_units)
-                    if units > 0:
-                        comm = units * exec_p * self.commission
-                        cash += units * exec_p - comm
-                        pos = -units
-                        entry_price = exec_p
+                elif allow_short and sig < -et:
+                    exec_price = price * (1 - self.slippage)
+                    size = (
+                        self.strategy.position_sizer.compute_size(
+                            sig, cash, exec_price,
+                            volatility=atr[i] if atr is not None else None,
+                        )
+                        if has_sizer
+                        else cash / exec_price
+                    )
+                    if size > 0:
+                        comm = size * exec_price * self.commission
+                        cash += size * exec_price - comm
+                        pos = -size
+                        entry_price = exec_price
                         entry_date = dates[i]
                         entry_bar = i
                         entry_comm = comm
 
             equity_arr[i] = cash + pos * price
 
-        # ---- Force-close any open position at final bar ----
-        if pos > 0:
-            cash, pos = self._close_long(
-                cash, pos, closes[-1], entry_price, entry_comm,
-                entry_date, dates[-1], n - 1, entry_bar, trades,
-            )
-            equity_arr[-1] = cash
-        elif pos < 0:
-            cash, pos = self._close_short(
-                cash, pos, closes[-1], entry_price, entry_comm,
-                entry_date, dates[-1], n - 1, entry_bar, trades,
-            )
-            equity_arr[-1] = cash
-
         equity_curve = pd.Series(equity_arr, index=dates, name='equity')
-
-        trade_cols = [
-            'direction', 'entry_date', 'entry_price', 'exit_date',
-            'exit_price', 'units', 'pnl', 'return_pct', 'commission',
-            'bars_held',
-        ]
-        trade_log = pd.DataFrame(trades, columns=trade_cols) if trades else pd.DataFrame(columns=trade_cols)
-
+        trade_log = pd.DataFrame(trades)
         return equity_curve, trade_log
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _size(self, signal: float, equity: float, exec_price: float, atr_val: float | None) -> float:
-        """Compute position size in units."""
-        if self.strategy.position_sizer:
-            return self.strategy.position_sizer.compute_size(
-                signal_strength=signal,
-                equity=equity,
-                price=exec_price,
-                volatility=atr_val,
-            )
-        # Default: allocate full equity
-        return equity / exec_price
-
-    def _close_long(
-        self, cash, pos, price, entry_price, entry_comm,
-        entry_date, exit_date, exit_bar, entry_bar, trades,
-    ) -> tuple[float, float]:
-        exec_p = price * (1 - self.slippage)
-        proceeds = pos * exec_p
-        comm = proceeds * self.commission
-        cash += proceeds - comm
-        pnl = pos * (exec_p - entry_price) - entry_comm - comm
-        trades.append({
-            'direction': 'long',
-            'entry_date': entry_date,
-            'entry_price': entry_price,
-            'exit_date': exit_date,
-            'exit_price': exec_p,
-            'units': pos,
-            'pnl': pnl,
-            'return_pct': pnl / (pos * entry_price) if entry_price > 0 else 0.0,
-            'commission': entry_comm + comm,
-            'bars_held': exit_bar - entry_bar,
-        })
-        return cash, 0.0
-
-    def _close_short(
-        self, cash, pos, price, entry_price, entry_comm,
-        entry_date, exit_date, exit_bar, entry_bar, trades,
-    ) -> tuple[float, float]:
-        units = abs(pos)
-        exec_p = price * (1 + self.slippage)
-        cost = units * exec_p
-        comm = cost * self.commission
-        cash -= cost + comm
-        pnl = units * (entry_price - exec_p) - entry_comm - comm
-        trades.append({
-            'direction': 'short',
-            'entry_date': entry_date,
-            'entry_price': entry_price,
-            'exit_date': exit_date,
-            'exit_price': exec_p,
-            'units': units,
-            'pnl': pnl,
-            'return_pct': pnl / (units * entry_price) if entry_price > 0 else 0.0,
-            'commission': entry_comm + comm,
-            'bars_held': exit_bar - entry_bar,
-        })
-        return cash, 0.0

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "TradeLab"
-version = "0.1.0"
+version = "0.2.0"
 description = "A modular framework for backtesting trading strategies"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -30,17 +30,20 @@ dependencies = [
     "yfinance>=0.2",
     "matplotlib>=3.7",
     "scipy>=1.10",
-    "nbformat>=4.2.0"
+    "nbformat>=4.2.0",
+    "optuna>=3.5",
 ]
 
 [project.optional-dependencies]
 ml = [
     "tensorflow>=2.13",
     "keras>=2.13",
+    "optuna[integration]>=3.5",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "tqdm>=4.65",
 ]
 
 [project.urls]
