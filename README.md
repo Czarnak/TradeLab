@@ -64,6 +64,12 @@ For development:
 pip install -e ".[dev]"
 ```
 
+For ML optimization workflows (TensorFlow/Keras + sklearn + Optuna integration):
+
+```bash
+pip install -e ".[ml]"
+```
+
 ## Quick Start
 
 Run the provided example strategy:
@@ -132,7 +138,7 @@ data_engine = BacktestEngine(ticker='SPY', start='2015-01-01', end='2024-01-01')
 full_df = data_engine.fetch_data()
 
 
-# Split data: train on 2015â€“2021, validate on 2022â€“2024
+# Split data: train on 2015–2021, validate on 2022–2024
 train_df = full_df[:'2021-12-31']
 val_df   = full_df['2022-01-01':]
 
@@ -175,7 +181,7 @@ print(result.trials_df.sort_values('value', ascending=False).head(10))
 The **strategy factory** pattern keeps the optimizer decoupled from strategy
 internals. The optimizer samples numbers; the factory decides what they mean.
 This means the same optimizer can tune indicator parameters, weights, thresholds,
-position sizing fractions â€” anything your factory maps from the params dict.
+position sizing fractions — anything your factory maps from the params dict.
 
 The **validation DataFrame** is never shown to the optimizer during search. It
 is evaluated once after the search completes using only `best_params`. This
@@ -231,7 +237,7 @@ print(f"Max drawdown 90% CI: [{low:.2%}, {high:.2%}]")
 
 The `BlockBootstrap` and `CircularBlockBootstrap` generators are recommended
 as the primary robustness tools. They preserve short-range autocorrelation and
-volatility clustering â€” the temporal structure that trend-following and
+volatility clustering — the temporal structure that trend-following and
 mean-reversion strategies actually exploit. Shuffling destroys this structure;
 GBM replaces it with an idealized model.
 
@@ -240,10 +246,10 @@ GBM replaces it with an idealized model.
 The `percentile_of(metric, value)` method is the most useful single-number
 check. For metrics where higher is better (e.g. Sharpe ratio):
 
-- **Below 50th percentile** â€” the strategy underperforms the average synthetic path.
-- **50â€“75th percentile** â€” moderate edge, may be partially path-dependent.
-- **75â€“95th percentile** â€” strategy is robust across most synthetic paths.
-- **Above 95th percentile** â€” investigate: strong edge or potential overfitting.
+- **Below 50th percentile** — the strategy underperforms the average synthetic path.
+- **50–75th percentile** — moderate edge, may be partially path-dependent.
+- **75–95th percentile** — strategy is robust across most synthetic paths.
+- **Above 95th percentile** — investigate: strong edge or potential overfitting.
 
 For metrics where lower is better (e.g. `max_drawdown`), invert the interpretation.
 
@@ -334,6 +340,21 @@ src/trade_lab/
     base.py
     moving_averages.py
     oscillators.py
+  ml/
+    __init__.py
+    models.py
+    preprocessing.py
+    targets.py
+    trainer.py
+    validation.py
+  ml_optimization/
+    __init__.py
+    search_space.py
+    feature_builder.py
+    objective.py
+    optimizer.py
+    pruning.py
+    result.py
   monte_carlo/
     __init__.py
     generators.py
@@ -395,13 +416,16 @@ Core modules:
 Examples:
 
 - [`examples/simple_ema_strategy.py`][example-ema]
+- [`examples/standard_optimization_example.ipynb`][example-opt-standard]
+- [`examples/ml_optimization_example.ipynb`][example-opt-ml]
+- [`examples/monte_carlo_example.ipynb`][example-mc]
 
 ## Roadmap
 
 - Stabilize and document public APIs for strategy, signal, and indicator extension.
 - Add more built-in strategy templates (trend-following and mean-reversion variants).
 - Expand test coverage for backtest edge cases (missing data, sparse trades, no-trade windows).
-- Introduce ML model hyperparameter optimisation (extending the existing optimization module).
+- Extend ML optimisation with richer model families and time-series validation schemes.
 - Improve reporting with richer trade analytics and export formats.
 - Prepare packaging and release automation for PyPI distribution.
 
@@ -468,3 +492,7 @@ MIT
 [api-mlopt-pruning]: src/trade_lab/ml_optimization/pruning.py
 [api-mlopt-result]: src/trade_lab/ml_optimization/result.py
 [example-ema]: examples/simple_ema_strategy.py
+[example-opt-standard]: examples/standard_optimization_example.ipynb
+[example-opt-ml]: examples/ml_optimization_example.ipynb
+[example-mc]: examples/monte_carlo_example.ipynb
+

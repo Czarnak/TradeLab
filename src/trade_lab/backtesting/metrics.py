@@ -4,6 +4,8 @@ import pandas as pd
 
 def _direction_stats(trade_log: pd.DataFrame, direction: str) -> tuple[float, float, float]:
     """Return (win_rate, avg_win, avg_loss) for a direction."""
+    if 'direction' not in trade_log.columns:
+        return 0.0, 0.0, 0.0
     trades = trade_log[trade_log['direction'] == direction]
     if len(trades) == 0:
         return 0.0, 0.0, 0.0

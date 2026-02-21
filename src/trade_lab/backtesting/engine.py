@@ -153,7 +153,7 @@ class BacktestEngine:
         low = df['Low'].to_numpy()
         close = df['Close'].to_numpy()
 
-        prev_close = np.empty_like(close)
+        prev_close = np.empty(len(close), dtype=float)
         prev_close[0] = np.nan
         prev_close[1:] = close[:-1]
 

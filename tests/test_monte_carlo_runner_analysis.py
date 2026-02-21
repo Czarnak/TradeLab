@@ -145,7 +145,7 @@ def test_run_single_simulation_handles_none_seed_and_returns_metrics_dict():
     generator = _TrackingGenerator(seed=None)
     runner = MonteCarloRunner(engine=engine, generator=generator, n_simulations=1, verbose=False)
 
-    metrics = runner._run_single_simulation(df, simulation_index=9)
+    metrics = runner._run_single_simulation(df, simulation_index=9, seen_keys=set())
 
     assert metrics["score"] == 1
     assert generator.seen_seeds == [None]

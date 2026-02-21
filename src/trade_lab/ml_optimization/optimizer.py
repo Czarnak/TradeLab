@@ -17,7 +17,6 @@ import os
 import time
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 import optuna
 import pandas as pd
 
@@ -151,8 +150,6 @@ class MLOptimizer:
         -------
         MLOptimizationResult
         """
-        from trade_lab.ml_optimization.result import MLOptimizationResult
-
         storage = self._build_storage()
         pruner = optuna.pruners.MedianPruner(
             n_warmup_steps=self.n_warmup_trials,
@@ -238,7 +235,6 @@ class MLOptimizer:
         best_value = best_trial.value
 
         # Retrieve stored artifacts
-        feature_names = best_trial.user_attrs['feature_names']
         raw_specs = best_trial.user_attrs['lagged_indicator_specs']
         spec_tuples = _deserialize_specs(raw_specs)
 

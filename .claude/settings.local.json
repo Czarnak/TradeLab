@@ -4,7 +4,13 @@
       "Bash(wc:*)",
       "Bash(git ls-tree:*)",
       "Read(//c/Users/lukas/Documents/RND/TradeLab/**)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(pip install:*)",
+      "Bash(ruff check:*)",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m ruff check:*)",
+      "Bash(python -c:*)"
     ]
   }
 }

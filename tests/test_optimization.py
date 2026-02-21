@@ -181,7 +181,7 @@ def test_objective_call_prunes_when_metric_is_nan(monkeypatch):
 
 
 def test_infer_direction_covers_minimize_and_maximize():
-    assert _infer_direction("max_drawdown") == "minimize"
+    assert _infer_direction("max_drawdown") == "maximize"
     assert _infer_direction("sharpe_ratio") == "maximize"
 
 

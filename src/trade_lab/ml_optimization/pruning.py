@@ -166,7 +166,6 @@ class ModelPruner:
         """
         import copy
 
-        from trade_lab.backtesting.engine import BacktestEngine
         from trade_lab.ml_optimization.feature_builder import (
             FeatureMatrix,
             LaggedIndicator,
@@ -197,7 +196,6 @@ class ModelPruner:
         )
 
         # Step 5 — Build a fresh model for the filtered features and fine-tune
-        n_features = X_train.shape[1]
         # We need to create a new model matching the filtered feature count.
         # Transfer weights from the pruned model for surviving features.
         import keras
