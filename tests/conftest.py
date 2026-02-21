@@ -116,3 +116,35 @@ except ModuleNotFoundError:
 
     sys.modules["optuna"] = optuna
     sys.modules["optuna.integration"] = integration
+
+try:
+    import sklearn.preprocessing  # noqa: F401
+except ModuleNotFoundError:
+    sklearn = types.ModuleType("sklearn")
+    preprocessing = types.ModuleType("preprocessing")
+
+    class _DummyStandardScaler:
+        def __init__(self):
+            self.mean_ = None
+            self.scale_ = None
+
+        def fit(self, X):
+            self.mean_ = X.mean(axis=0)
+            scale = X.std(axis=0)
+            # Avoid divide-by-zero for constant columns
+            self.scale_ = scale + (scale == 0)
+            return self
+
+        def transform(self, X):
+            if self.mean_ is None or self.scale_ is None:
+                return X
+            return (X - self.mean_) / self.scale_
+
+        def fit_transform(self, X):
+            return self.fit(X).transform(X)
+
+    preprocessing.StandardScaler = _DummyStandardScaler
+    sklearn.preprocessing = preprocessing
+
+    sys.modules["sklearn"] = sklearn
+    sys.modules["sklearn.preprocessing"] = preprocessing
