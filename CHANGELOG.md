@@ -10,32 +10,32 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - `ml_optimization` module for Keras model feature selection and optimization:
   - `feature_builder.py`:
-    - `LaggedIndicator` — composes any `BaseIndicator` with configurable lags.
+    - `LaggedIndicator` â€” composes any `BaseIndicator` with configurable lags.
       Lag 0 always included. Column convention: `indicator__ema_20__lag_3`.
-    - `FeatureMatrix` — assembles lagged feature matrices from a list of
+    - `FeatureMatrix` â€” assembles lagged feature matrices from a list of
       `LaggedIndicator` instances. Computes log forward return as target `y`.
       Fits `StandardScaler` on training data; applies (never refits) on
       val/test. Exposes `feature_names` and `scaler` for deployment.
   - `search_space.py`:
-    - `IndicatorSpec` — descriptor for one candidate indicator in the search:
+    - `IndicatorSpec` â€” descriptor for one candidate indicator in the search:
       class, period range, lag range, max lags (default 5), optional flag.
   - `objective.py`:
-    - `MLObjective` — picklable Optuna objective. Per trial: samples indicator
+    - `MLObjective` â€” picklable Optuna objective. Per trial: samples indicator
       config, builds feature matrices, trains Keras model with
       `KerasPruningCallback` (pruning on val_loss), evaluates via full
       backtest, returns chosen metric. Stores feature spec in trial user attrs
       for best-trial reconstruction.
   - `optimizer.py`:
-    - `MLOptimizer` — orchestrates Optuna study with `MedianPruner`. After
+    - `MLOptimizer` â€” orchestrates Optuna study with `MedianPruner`. After
       search, retrains best configuration from scratch for full `n_epochs`.
       Evaluates on val_df and optional test_df. Supports parallel workers
       via SQLite storage (same pattern as `OptunaOptimizer`).
   - `result.py`:
-    - `MLOptimizationResult` — dataclass with `best_model`, `best_strategy`,
+    - `MLOptimizationResult` â€” dataclass with `best_model`, `best_strategy`,
       `best_feature_spec`, `scaler`, `feature_names`, `val_metrics`,
       `test_metrics`, `train_df`, trial counts, and `summary()`.
   - `pruning.py`:
-    - `ModelPruner` — post-training weight pruning. Two modes: global
+    - `ModelPruner` â€” post-training weight pruning. Two modes: global
       threshold (one cutoff across all layers) and per-layer percentile
       (bottom N% zeroed per layer). Dead feature detection on first Dense
       layer. `prune_model()` operates on raw Keras model; `prune_result()`
@@ -68,7 +68,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Fixed
 
 - `optimization/optimizer.py`: `_MINIMIZE_METRICS` incorrectly included
-  `max_drawdown`, `avg_loss`, `long_avg_loss`, `short_avg_loss` — all of which
+  `max_drawdown`, `avg_loss`, `long_avg_loss`, `short_avg_loss` â€” all of which
   are stored as negative numbers by `compute_metrics`. Optuna was minimising
   them, searching for the worst possible values. Removed from the set; these
   metrics are now correctly maximised (value closest to zero = best).
@@ -94,25 +94,25 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - `optimization` module for Optuna-based strategy parameter search:
   - `param_space.py`:
-    - `IntParam` — integer parameter with optional step size.
-    - `FloatParam` — float parameter with optional log-scale sampling.
-    - `CategoricalParam` — discrete choice parameter.
+    - `IntParam` â€” integer parameter with optional step size.
+    - `FloatParam` â€” float parameter with optional log-scale sampling.
+    - `CategoricalParam` â€” discrete choice parameter.
     - `ParamSpace` type alias for `list[IntParam | FloatParam | CategoricalParam]`.
   - `objective.py`:
-    - `Objective` — picklable callable wrapping the strategy factory and
+    - `Objective` â€” picklable callable wrapping the strategy factory and
       backtest engine into an Optuna-compatible objective function.
     - `StrategyFactory` type alias for `Callable[[dict], BaseStrategy]`.
   - `optimizer.py`:
-    - `OptunaOptimizer` — orchestrates Optuna study creation, trial execution,
+    - `OptunaOptimizer` â€” orchestrates Optuna study creation, trial execution,
       and result compilation. Supports:
       - TPE sampler (Bayesian, efficient for mixed discrete/continuous spaces).
       - Single-process (in-memory storage) and multi-process (SQLite storage).
       - Optional train/validation DataFrame split (validation is strictly
-        post-hoc — never influences the search).
+        post-hoc â€” never influences the search).
       - Auto-inferred optimisation direction from metric name.
       - `load_if_exists=True` study resumption from existing SQLite files.
   - `result.py`:
-    - `OptimizationResult` — dataclass with `best_params`, `best_value`,
+    - `OptimizationResult` â€” dataclass with `best_params`, `best_value`,
       `train_metrics`, `val_metrics`, `trials_df`, `study`, trial counts,
       and `summary()` human-readable output.
 - `optuna>=3.5` added to core dependencies in `pyproject.toml`.
@@ -139,22 +139,22 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - `monte_carlo` module for strategy robustness validation:
   - `generators.py`:
-    - `BaseGenerator` — abstract base class for all MC generators.
-    - `ReturnShuffler` — naive baseline; randomly permutes log returns.
-    - `BlockBootstrap` — Stationary Block Bootstrap (Politis & Romano, 1994);
+    - `BaseGenerator` â€” abstract base class for all MC generators.
+    - `ReturnShuffler` â€” naive baseline; randomly permutes log returns.
+    - `BlockBootstrap` â€” Stationary Block Bootstrap (Politis & Romano, 1994);
       geometric-distributed block lengths preserve short-range autocorrelation.
-    - `CircularBlockBootstrap` — circular variant that eliminates boundary bias.
-    - `GBMSimulator` — Geometric Brownian Motion with Itô-corrected drift.
+    - `CircularBlockBootstrap` â€” circular variant that eliminates boundary bias.
+    - `GBMSimulator` â€” Geometric Brownian Motion with ItÃ´-corrected drift.
   - `runner.py`:
-    - `MonteCarloRunner` — orchestrates N synthetic backtests; deterministic
+    - `MonteCarloRunner` â€” orchestrates N synthetic backtests; deterministic
       per-simulation seeding for full reproducibility.
-    - `MonteCarloResult` — dataclass holding raw metric distributions.
+    - `MonteCarloResult` â€” dataclass holding raw metric distributions.
   - `analysis.py`:
-    - `MonteCarloAnalysis` — `summary()`, `distributions()`,
+    - `MonteCarloAnalysis` â€” `summary()`, `distributions()`,
       `confidence_interval()`, `percentile_of()`, `available_metrics()`.
-- `BacktestEngine.run_on(df)` — public method for running a backtest on a
+- `BacktestEngine.run_on(df)` â€” public method for running a backtest on a
   pre-built DataFrame (skips data download); used internally by the MC runner.
-- `BacktestEngine.fetch_data()` — public wrapper around `_fetch_data()` to
+- `BacktestEngine.fetch_data()` â€” public wrapper around `_fetch_data()` to
   expose raw data retrieval for external use (e.g. passing to `MonteCarloRunner`).
 
 ## [0.1.0] - 2026-02-19

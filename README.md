@@ -138,7 +138,7 @@ data_engine = BacktestEngine(ticker='SPY', start='2015-01-01', end='2024-01-01')
 full_df = data_engine.fetch_data()
 
 
-# Split data: train on 2015–2021, validate on 2022–2024
+# Split data: train on 2015â€“2021, validate on 2022â€“2024
 train_df = full_df[:'2021-12-31']
 val_df   = full_df['2022-01-01':]
 
@@ -181,7 +181,7 @@ print(result.trials_df.sort_values('value', ascending=False).head(10))
 The **strategy factory** pattern keeps the optimizer decoupled from strategy
 internals. The optimizer samples numbers; the factory decides what they mean.
 This means the same optimizer can tune indicator parameters, weights, thresholds,
-position sizing fractions — anything your factory maps from the params dict.
+position sizing fractions â€” anything your factory maps from the params dict.
 
 The **validation DataFrame** is never shown to the optimizer during search. It
 is evaluated once after the search completes using only `best_params`. This
@@ -237,7 +237,7 @@ print(f"Max drawdown 90% CI: [{low:.2%}, {high:.2%}]")
 
 The `BlockBootstrap` and `CircularBlockBootstrap` generators are recommended
 as the primary robustness tools. They preserve short-range autocorrelation and
-volatility clustering — the temporal structure that trend-following and
+volatility clustering â€” the temporal structure that trend-following and
 mean-reversion strategies actually exploit. Shuffling destroys this structure;
 GBM replaces it with an idealized model.
 
@@ -246,10 +246,10 @@ GBM replaces it with an idealized model.
 The `percentile_of(metric, value)` method is the most useful single-number
 check. For metrics where higher is better (e.g. Sharpe ratio):
 
-- **Below 50th percentile** — the strategy underperforms the average synthetic path.
-- **50–75th percentile** — moderate edge, may be partially path-dependent.
-- **75–95th percentile** — strategy is robust across most synthetic paths.
-- **Above 95th percentile** — investigate: strong edge or potential overfitting.
+- **Below 50th percentile** â€” the strategy underperforms the average synthetic path.
+- **50â€“75th percentile** â€” moderate edge, may be partially path-dependent.
+- **75â€“95th percentile** â€” strategy is robust across most synthetic paths.
+- **Above 95th percentile** â€” investigate: strong edge or potential overfitting.
 
 For metrics where lower is better (e.g. `max_drawdown`), invert the interpretation.
 
