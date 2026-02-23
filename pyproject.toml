@@ -29,7 +29,7 @@ dependencies = [
     "numpy>=1.25",
     "yfinance>=1.2.0",
     "matplotlib>=3.7",
-    "scipy>=1.10",
+    "scipy>=1.17.1",
     "nbformat>=4.2.0",
     "optuna>=3.5",
 ]
@@ -40,6 +40,9 @@ ml = [
     "keras>=3.13",
     "optuna-integration[keras]>=4.5",
     "scikit-learn>=1.8",
+]
+mql5 = [
+    "Jinja2>=3.1"
 ]
 dev = [
     "pytest>=7.0",

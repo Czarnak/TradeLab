@@ -52,6 +52,10 @@ class HeikinAshi(BaseSignal):
     log normalisation as OHLC:  log( HA_P(t) / HA_Close(t-1) ).
     """
 
+    def __init__(self, source: 'BaseSignal | None' = None):
+        super().__init__(source)
+        self.raw_df = None
+
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
 
@@ -74,23 +78,37 @@ class HeikinAshi(BaseSignal):
         ])
         ha_low = pd.Series(stacked.min(axis=1), index=df.index)
 
+        # --- Save raw HA bars for plotting ---
+        self.raw_df = df.copy()
+        self.raw_df['signal__ha_open'] = ha_open
+        self.raw_df['signal__ha_high'] = ha_high
+        self.raw_df['signal__ha_low'] = ha_low
+        self.raw_df['signal__ha_close'] = ha_close
+
         # --- Log normalisation against previous HA Close ---
         prev_ha_close = ha_close.shift(1)
-        df['signal__ha_log_return_open'] = np.log(ha_open / prev_ha_close)
-        df['signal__ha_log_return_high'] = np.log(ha_high / prev_ha_close)
-        df['signal__ha_log_return_low'] = np.log(ha_low / prev_ha_close)
-        df['signal__ha_log_return_close'] = np.log(ha_close / prev_ha_close)
+        df['signal__ha_open'] = np.log(ha_open / prev_ha_close)
+        df['signal__ha_high'] = np.log(ha_high / prev_ha_close)
+        df['signal__ha_low'] = np.log(ha_low / prev_ha_close)
+        df['signal__ha_close'] = np.log(ha_close / prev_ha_close)
 
         return df
 
     def plot(self, df: pd.DataFrame):
-        fig = go.Figure()
-        for col in self.output_columns:
-            fig.add_trace(go.Scatter(
-                x=df.index.to_numpy(), y=df[col], mode='lines', name=col,
-            ))
+        fig = go.Figure(
+            data = [
+                go.Candlestick(
+                    x=df.index.to_numpy(),
+                    open=df['signal__ha_open'],
+                    high=df['signal__ha_high'],
+                    low=df['signal__ha_low'],
+                    close=df['signal__ha_close'],
+                    name='Heikin-Ashi',
+                    showlegend=False, )
+            ]
+        )
         fig.update_layout(
-            title='Heikin-Ashi Log Returns',
+            title='Heikin-Ashi',
             xaxis_title='Date',
             yaxis_title='Log Return',
         )
@@ -99,8 +117,8 @@ class HeikinAshi(BaseSignal):
     @property
     def output_columns(self) -> list[str]:
         return [
-            'signal__ha_log_return_open',
-            'signal__ha_log_return_high',
-            'signal__ha_log_return_low',
-            'signal__ha_log_return_close',
+            'signal__ha_open',
+            'signal__ha_high',
+            'signal__ha_low',
+            'signal__ha_close',
         ]

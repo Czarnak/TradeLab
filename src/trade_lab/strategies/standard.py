@@ -13,7 +13,7 @@ class StandardStrategy(BaseStrategy):
 
     Combination formula:
         raw     = Σ(weight_i x indicator_i.to_signal_strength())
-        output  = tanh(raw)   # squashes to [-1, 1]
+        output = tanh(raw) # squashes to [-1, 1]
     """
 
     def __init__(

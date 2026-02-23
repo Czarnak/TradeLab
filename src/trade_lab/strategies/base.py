@@ -10,7 +10,7 @@ class BaseStrategy(ABC):
     Output: DataFrame with 'signal_strength' column in [-1.0, 1.0].
 
     Backtester interprets signal_strength using:
-        signal_strength >  entry_threshold → open/maintain long
+        signal_strength > entry_threshold → open/maintain long
         signal_strength < -entry_threshold → open/maintain short
         |signal_strength| < exit_threshold → close position
     """
@@ -32,7 +32,7 @@ class BaseStrategy(ABC):
     @abstractmethod
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Run full pipeline and return df with 'signal_strength' column.
+        Run the full pipeline and return df with the 'signal_strength' column.
         Responsible for calling indicator.compute() internally.
         """
         ...

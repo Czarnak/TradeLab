@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 import sys
 
-# Allow running this file directly from repository root without install.
+# Allow running this file directly from the repository root without installation.
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
