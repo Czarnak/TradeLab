@@ -309,3 +309,5 @@ __marimo__/
 *.csv
 *.xlsx
 playground.ipynb
+*/optuna_studies
+/optuna_studies

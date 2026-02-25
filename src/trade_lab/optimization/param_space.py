@@ -83,8 +83,8 @@ class FloatParam:
     """
 
     name: str
-    low: Decimal
-    high: Decimal
+    low: float
+    high: float
     log: bool = False
 
 

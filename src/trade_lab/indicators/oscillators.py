@@ -5,8 +5,6 @@ import plotly.graph_objects as go
 from trade_lab.indicators.base import BaseIndicator
 from trade_lab.signals.base import BaseSignal
 
-# TODO - MACD, HW, Momentum - sprawdzić
-
 class RSI(BaseIndicator):
     """Relative Strength Index oscillator.
 

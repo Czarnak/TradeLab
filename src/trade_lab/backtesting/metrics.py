@@ -22,7 +22,7 @@ def _direction_stats(trade_log: pd.DataFrame, direction: str) -> tuple[float, fl
 def compute_metrics(
     equity_curve: pd.Series,
     trade_log: pd.DataFrame,
-    risk_free_rate: float = 0.0,
+    risk_free_rate: float = 10.0,
 ) -> dict:
     """Compute performance metrics from backtest results.
 
@@ -45,13 +45,31 @@ def compute_metrics(
     n_days = len(equity_curve)
 
     # --- Return metrics ---
-    total_return = (final - initial) / initial
-    annualized_return = (1 + total_return) ** (252 / max(n_days, 1)) - 1
+    if np.isfinite(initial) and initial > 0 and np.isfinite(final):
+        total_return = (final - initial) / initial
+    else:
+        total_return = 0.0
+
+    if total_return <= -1.0:
+        annualized_return = -1.0
+    else:
+        annualized_return = (1 + total_return) ** (252 / max(n_days, 1)) - 1
+    if not np.isfinite(annualized_return):
+        annualized_return = 0.0
 
     # --- Risk metrics ---
-    daily_returns = equity_curve.pct_change().dropna()
+    # Equity can hit 0 in edge cases; pct_change from/to 0 can produce +/-inf.
+    # Keep only finite returns so volatility metrics don't emit runtime warnings.
+    daily_returns = (
+        equity_curve
+        .pct_change()
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
 
     annual_vol = daily_returns.std() * np.sqrt(252) if len(daily_returns) > 0 else 0.0
+    if not np.isfinite(annual_vol):
+        annual_vol = 0.0
     sharpe = (
         (annualized_return - risk_free_rate) / annual_vol
         if annual_vol > 0 else 0.0
@@ -59,6 +77,8 @@ def compute_metrics(
 
     downside = daily_returns[daily_returns < 0]
     downside_vol = downside.std() * np.sqrt(252) if len(downside) > 0 else 0.0
+    if not np.isfinite(downside_vol):
+        downside_vol = 0.0
     sortino = (
         (annualized_return - risk_free_rate) / downside_vol
         if downside_vol > 0 else 0.0

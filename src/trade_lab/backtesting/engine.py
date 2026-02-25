@@ -52,6 +52,7 @@ class BacktestEngine:
         start: str | None = None,
         end: str | None = None,
         initial_capital: float = 100_000.0,
+        leverage: float = 1.0,
         commission: float = 0.001,
         slippage: float = 0.0005,
     ):
@@ -60,6 +61,7 @@ class BacktestEngine:
         self.start = start
         self.end = end
         self.initial_capital = initial_capital
+        self.leverage = leverage
         self.commission = commission
         self.slippage = slippage
 
@@ -195,7 +197,7 @@ class BacktestEngine:
         for i in range(n):
             price = closes[i]
             sig = signals[i]
-            equity = cash + pos * price
+            equity = cash + pos * (price - entry_price) / self.leverage
 
             # Skip bars with no signal or depleted equity
             if np.isnan(sig) or equity <= 0:
@@ -208,8 +210,8 @@ class BacktestEngine:
                     exec_price = price * (1 - self.slippage)
                     comm = abs(pos) * exec_price * self.commission
                     proceeds = pos * exec_price - comm
-                    pnl = proceeds - (pos * entry_price + entry_comm)
-                    cash += proceeds
+                    pnl = (proceeds - (pos * entry_price + entry_comm))  / self.leverage
+                    cash += pnl
                     trades.append({
                         'direction': 'long',
                         'entry_date': entry_date,
@@ -228,8 +230,8 @@ class BacktestEngine:
                     exec_price = price * (1 + self.slippage)
                     comm = abs(pos) * exec_price * self.commission
                     cost = abs(pos) * exec_price + comm
-                    pnl = (abs(pos) * abs(entry_price)) - cost - entry_comm
-                    cash += abs(pos) * abs(entry_price) - cost
+                    pnl = (abs(pos) * entry_price - cost - entry_comm) / self.leverage
+                    cash += pnl
                     trades.append({
                         'direction': 'short',
                         'entry_date': entry_date,
@@ -253,7 +255,7 @@ class BacktestEngine:
                             volatility=atr[i] if atr is not None else None,
                         )
                         if has_sizer
-                        else cash / exec_price
+                        else min(round(cash / exec_price / self.leverage, 2), 2250.0)
                     )
                     if size > 0:
                         comm = size * exec_price * self.commission
@@ -272,7 +274,7 @@ class BacktestEngine:
                             volatility=atr[i] if atr is not None else None,
                         )
                         if has_sizer
-                        else cash / exec_price
+                        else min(round(cash / exec_price / self.leverage, 2), 2250.0)
                     )
                     if size > 0:
                         comm = size * exec_price * self.commission
@@ -283,7 +285,7 @@ class BacktestEngine:
                         entry_bar = i
                         entry_comm = comm
 
-            equity_arr[i] = cash + pos * price
+            equity_arr[i] = cash + pos * (price - entry_price) / self.leverage
 
         equity_curve = pd.Series(equity_arr, index=dates, name='equity')
         trade_log = pd.DataFrame(trades)
