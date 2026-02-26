@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -5,21 +7,40 @@ import plotly.graph_objects as go
 from trade_lab.indicators.base import BaseIndicator
 from trade_lab.signals.base import BaseSignal
 
-class BaseMA(BaseIndicator):
-    """Base class for Moving Average indicator.
 
-    Signal strength: normalised distance between price and SMA,
+class BaseMA(BaseIndicator):
+    """Base class for Moving Average indicators.
+
+    Signal strength: normalised distance between price and MA,
     squashed to [-1, 1] via tanh.  Price above MA → bullish,
     below → bearish.  Magnitude reflects conviction.
+
+    Parameters
+    ----------
+    *signals : BaseSignal
+        Upstream signals.
+    column : str
+        OHLCV column to compute the MA on.
+    period : int
+        Lookback window.
+    lag : int
+        Bars to shift output backward. See ``BaseIndicator`` for details.
     """
 
-    def __init__(self, *signals: BaseSignal, column: str = 'Close', period: int = 20):
-        super().__init__(*signals)
+    def __init__(
+        self,
+        *signals: BaseSignal,
+        column: str = 'Close',
+        period: int = 20,
+        lag: int = 0,
+    ) -> None:
+        super().__init__(*signals, lag=lag)
         self.column = column
         self.period = period
         self.plot_title = f'MA({self.period})'
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        # Implemented by concrete subclasses.
         ...
 
     def to_signal_strength(self, df: pd.DataFrame) -> pd.Series:
@@ -29,7 +50,7 @@ class BaseMA(BaseIndicator):
         normalized = (price - ma) / std
         return pd.Series(np.tanh(normalized.fillna(0)), index=df.index)
 
-    def plot(self, df: pd.DataFrame, ax=None):
+    def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
         fig.add_trace(go.Scatter(
@@ -48,8 +69,9 @@ class BaseMA(BaseIndicator):
         fig.show()
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return [f'indicator__ma_{self.period}']
+
 
 class SMA(BaseMA):
     """Simple Moving Average indicator.
@@ -61,18 +83,24 @@ class SMA(BaseMA):
     below → bearish.  Magnitude reflects conviction.
     """
 
-    def __init__(self, *signals: BaseSignal, column: str = 'Close', period: int = 20):
-        super().__init__(*signals, column = column, period = period)
+    def __init__(
+        self,
+        *signals: BaseSignal,
+        column: str = 'Close',
+        period: int = 20,
+        lag: int = 0,
+    ) -> None:
+        super().__init__(*signals, column=column, period=period, lag=lag)
         self.plot_title = f'SMA({self.period})'
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        col = self.output_columns[0]
+        col = self._raw_output_columns[0]
         df[col] = df[self.column].rolling(window=self.period).mean()
         return df
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return [f'indicator__sma_{self.period}']
 
 
@@ -86,66 +114,90 @@ class EMA(BaseMA):
     between price and EMA, squashed via tanh.
     """
 
-    def __init__(self, *signals: BaseSignal, column: str = 'Close', period: int = 20):
-        super().__init__(*signals, column = column, period = period)
+    def __init__(
+        self,
+        *signals: BaseSignal,
+        column: str = 'Close',
+        period: int = 20,
+        lag: int = 0,
+    ) -> None:
+        super().__init__(*signals, column=column, period=period, lag=lag)
         self.plot_title = f'EMA({self.period})'
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        col = self.output_columns[0]
+        col = self._raw_output_columns[0]
         df[col] = df[self.column].ewm(span=self.period, adjust=False).mean()
         return df
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return [f'indicator__ema_{self.period}']
+
 
 class WMA(BaseMA):
     """Weighted Moving Average indicator.
 
-    Computes the weighted moving average of a column.
-    Recent prices receive more weight than older prices.
+    Computes the linearly weighted moving average of a column.
+    Weights are proportional to position: oldest bar gets weight 1,
+    newest gets weight ``period``, then normalised to sum to 1.
 
     Signal strength: same approach as SMA — normalised distance
     between price and WMA, squashed via tanh.
     """
 
-    def __init__(self, *signals: BaseSignal, column: str = 'Close', period: int = 20):
-        super().__init__(*signals, column = column, period = period)
+    def __init__(
+        self,
+        *signals: BaseSignal,
+        column: str = 'Close',
+        period: int = 20,
+        lag: int = 0,
+    ) -> None:
+        super().__init__(*signals, column=column, period=period, lag=lag)
         self.plot_title = f'WMA({self.period})'
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        col = self.output_columns[0]
-        weights = np.arange(1, self.period + 1) / self.period
-        df[col] = df[self.column].rolling(self.period).apply(lambda x: np.dot(x, weights), raw=True)
+        col = self._raw_output_columns[0]
+        # Weights [1, 2, ..., period] normalised by their sum period*(period+1)/2
+        weights = np.arange(1, self.period + 1) / (self.period * (self.period + 1) / 2)
+        df[col] = df[self.column].rolling(self.period).apply(
+            lambda x: np.dot(x, weights), raw=True,
+        )
         return df
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return [f'indicator__wma_{self.period}']
 
 
 class CMA(BaseMA):
     """Cumulative Moving Average indicator.
 
-    Computes the cumulative moving average of a column.
-    Recent prices receive more weight than older prices.
+    Computes the expanding mean of a column from the first available bar.
+    The ``period`` parameter controls ``min_periods`` (the minimum number
+    of bars required before a value is returned).
 
     Signal strength: same approach as SMA — normalised distance
     between price and CMA, squashed via tanh.
     """
 
-    def __init__(self, *signals: BaseSignal, column: str = 'Close', period: int = 20):
-        super().__init__(*signals, column = column, period = period)
+    def __init__(
+        self,
+        *signals: BaseSignal,
+        column: str = 'Close',
+        period: int = 20,
+        lag: int = 0,
+    ) -> None:
+        super().__init__(*signals, column=column, period=period, lag=lag)
         self.plot_title = f'CMA({self.period})'
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        col = self.output_columns[0]
+        col = self._raw_output_columns[0]
         df[col] = df[self.column].expanding(min_periods=self.period).mean()
         return df
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return [f'indicator__cma_{self.period}']

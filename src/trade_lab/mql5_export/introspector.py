@@ -1,29 +1,27 @@
-"""Strategy introspection for MQL5 code generation.
+"""Strategy introspector — walks a StandardStrategy object tree.
 
-Walks a ``StandardStrategy`` object tree and extracts a fully structured
-``StrategyConfig`` that the code generator can consume without further
-knowledge of the TradeLab class hierarchy.
+Produces a ``StrategyConfig`` dataclass that captures everything the Jinja2
+templates need to render a complete MQL5 Expert Advisor without any further
+Python-side logic.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
-from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
-from trade_lab.signals.signals import OHLC, HeikinAshi
+from trade_lab.indicators.base import BaseIndicator
+from trade_lab.signals.base import BaseSignal
 from trade_lab.signals.temporal import CyclicalTemporalSignal
 from trade_lab.sizing.fixed import FixedPositionSizer
 from trade_lab.sizing.risk_based import RiskBasedPositionSizer
-
-if TYPE_CHECKING:
-    from trade_lab.indicators.base import BaseIndicator
-    from trade_lab.signals.base import BaseSignal
-    from trade_lab.strategies.standard import StandardStrategy
+from trade_lab.strategies.standard import StandardStrategy
 
 # ---------------------------------------------------------------------------
-# Internal type maps
+# Type → string maps
 # ---------------------------------------------------------------------------
+
+from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
+from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
+from trade_lab.signals.signals import HeikinAshi, OHLC
 
 _INDICATOR_TYPE_MAP: dict[type, str] = {
     SMA: "sma",
@@ -42,6 +40,19 @@ _SIGNAL_TYPE_MAP: dict[type, str] = {
     CyclicalTemporalSignal: "cyclical_temporal",
 }
 
+# Display names for input prefix and function name generation
+# (base_input_prefix, base_function_name)
+_TYPE_DISPLAY_MAP: dict[str, tuple[str, str]] = {
+    "sma":           ("SMA", "SMA"),
+    "ema":           ("EMA", "EMA"),
+    "wma":           ("WMA", "WMA"),
+    "cma":           ("CMA", "CMA"),
+    "rsi":           ("RSI", "RSI"),
+    "macd":          ("MACD", "MACD"),
+    "momentum":      ("Momentum", "Momentum"),
+    "larry_williams": ("Larry_Williams", "LarryWilliams"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Config dataclasses
@@ -55,17 +66,14 @@ class SignalConfig:
     Parameters
     ----------
     signal_type : str
-        Snake-case type identifier, e.g. ``'ohlc'``, ``'heikin_ashi'``,
-        ``'cyclical_temporal'``.
+        One of ``'ohlc'``, ``'heikin_ashi'``, ``'cyclical_temporal'``.
     class_name : str
-        Python class name, e.g. ``'OHLC'``, ``'HeikinAshi'``.
+        Python class name, e.g. ``'OHLC'``.
     params : dict
-        Signal constructor parameters extracted by introspection.
+        Signal constructor parameters (empty for OHLC/HeikinAshi).
         For ``CyclicalTemporalSignal``: ``{'component': str, 'period': float}``.
-        For ``OHLC`` and ``HeikinAshi``: ``{}``.
     output_columns : list[str]
-        Column names appended to the DataFrame, e.g.
-        ``['signal__log_return_open', ...]``.
+        Column names this signal appends to the DataFrame.
     """
 
     signal_type: str
@@ -76,7 +84,7 @@ class SignalConfig:
 
 @dataclass
 class IndicatorConfig:
-    """Structured representation of one indicator slot in a ``StandardStrategy``.
+    """Structured representation of one indicator slot in a strategy.
 
     Parameters
     ----------
@@ -103,6 +111,10 @@ class IndicatorConfig:
     function_name : str
         PascalCase suffix for the signal-strength function name,
         e.g. ``'EMAFast'`` → ``GetEMAFastStrength()``.
+    lag : int
+        Bars by which this indicator's output is shifted backward.
+        0 means no lag (the default).  Forwarded to ``CopyBuffer`` offset
+        in MQL5 templates.
     """
 
     indicator_type: str
@@ -114,6 +126,7 @@ class IndicatorConfig:
     var_name: str
     input_prefix: str
     function_name: str
+    lag: int = 0
 
 
 @dataclass
@@ -126,9 +139,6 @@ class SizingConfig:
         One of ``'none'``, ``'fixed'``, ``'risk_based'``.
     params : dict
         Sizer constructor parameters.
-        For ``'fixed'``: ``{'fraction': float}``.
-        For ``'risk_based'``: ``{'max_fraction': float, 'risk_multiplier': float}``.
-        For ``'none'``: ``{}``.
     """
 
     sizer_type: str
@@ -214,64 +224,39 @@ def _generate_var_names(
     Rules
     -----
     * Single indicator of a type → just the type name (e.g. ``'rsi'``).
-    * Exactly two indicators of the same type → ``'<type>_fast'`` and
-      ``'<type>_slow'`` ordered by primary period ascending.
-    * Three or more → ``'<type>_1'``, ``'<type>_2'``, ``'<type>_3'`` ...
+    * Exactly two of the same type → ``'<type>_fast'`` / ``'<type>_slow'``
       ordered by primary period ascending.
-
-    Parameters
-    ----------
-    indicator_types : list[str]
-        Snake-case type string for each indicator (same order as strategy).
-    indicator_params : list[dict]
-        Params dict for each indicator (used for period-based ordering).
-
-    Returns
-    -------
-    list[str]
-        Unique var_name for each indicator in the original order.
+    * Three or more → ``'<type>_1'``, ``'<type>_2'``, ... ordered ascending.
     """
+    from collections import defaultdict
+
     # Group indices by type
-    type_to_indices: dict[str, list[int]] = {}
+    type_indices: dict[str, list[int]] = defaultdict(list)
     for i, itype in enumerate(indicator_types):
-        type_to_indices.setdefault(itype, []).append(i)
+        type_indices[itype].append(i)
 
-    var_names: list[str] = [""] * len(indicator_types)
+    var_names: list[str] = [''] * len(indicator_types)
 
-    for itype, indices in type_to_indices.items():
-        n = len(indices)
-        if n == 1:
+    for itype, indices in type_indices.items():
+        if len(indices) == 1:
             var_names[indices[0]] = itype
-        elif n == 2:
-            ordered = sorted(indices, key=lambda i: _sort_key(indicator_params[i]))
-            var_names[ordered[0]] = f"{itype}_fast"
-            var_names[ordered[1]] = f"{itype}_slow"
         else:
-            ordered = sorted(indices, key=lambda i: _sort_key(indicator_params[i]))
-            for rank, idx in enumerate(ordered, start=1):
-                var_names[idx] = f"{itype}_{rank}"
+            # Sort by primary period ascending
+            sorted_indices = sorted(
+                indices, key=lambda i: _sort_key(indicator_params[i]),
+            )
+            if len(sorted_indices) == 2:
+                var_names[sorted_indices[0]] = f"{itype}_fast"
+                var_names[sorted_indices[1]] = f"{itype}_slow"
+            else:
+                for rank, idx in enumerate(sorted_indices, start=1):
+                    var_names[idx] = f"{itype}_{rank}"
 
     return var_names
 
 
-# Proper display case for each indicator type.
-# Tuple: (input_prefix_base, function_name_base)
-# input_prefix_base uses underscores (e.g. 'Larry_Williams')
-# function_name_base is PascalCase without underscores (e.g. 'LarryWilliams')
-_TYPE_DISPLAY_MAP: dict[str, tuple[str, str]] = {
-    "sma": ("SMA", "SMA"),
-    "ema": ("EMA", "EMA"),
-    "wma": ("WMA", "WMA"),
-    "cma": ("CMA", "CMA"),
-    "rsi": ("RSI", "RSI"),
-    "macd": ("MACD", "MACD"),
-    "momentum": ("Momentum", "Momentum"),
-    "larry_williams": ("Larry_Williams", "LarryWilliams"),
-}
-
-
 def _make_input_prefix(var_name: str, indicator_type: str) -> str:
-    """Convert var_name + indicator_type to a Title_Case MQL5 input prefix.
+    """Convert var_name to a Title_Case MQL5 input prefix.
 
     Uses ``_TYPE_DISPLAY_MAP`` to preserve abbreviations (EMA, RSI, MACD)
     while capitalising any trailing suffix (fast, slow, 1, 2, ...).
@@ -286,7 +271,7 @@ def _make_input_prefix(var_name: str, indicator_type: str) -> str:
     'Larry_Williams_Fast'
     """
     base_input, _ = _TYPE_DISPLAY_MAP.get(indicator_type, (indicator_type.capitalize(), ""))
-    suffix = var_name[len(indicator_type):]   # '' or '_fast', '_1', ...
+    suffix = var_name[len(indicator_type):]  # '' or '_fast', '_1', ...
     if suffix:
         suffix_parts = suffix.lstrip("_").split("_")
         suffix_str = "_".join(p.capitalize() for p in suffix_parts if p)
@@ -321,38 +306,11 @@ def _make_function_name(var_name: str, indicator_type: str) -> str:
 
 
 class StrategyIntrospector:
-    """Walks a ``StandardStrategy`` object tree and returns a ``StrategyConfig``.
-
-    No knowledge of Jinja2 or MQL5 syntax is required here — this class
-    purely extracts and restructures Python-side information.
-
-    Examples
-    --------
-    >>> from trade_lab.indicators import EMA, RSI
-    >>> from trade_lab.strategies import StandardStrategy
-    >>> from trade_lab.mql5_export.introspector import StrategyIntrospector
-    >>>
-    >>> strategy = StandardStrategy(
-    ...     indicators=[(EMA(period=20), 1.0), (RSI(period=14), 0.5)],
-    ... )
-    >>> config = StrategyIntrospector().introspect(strategy)
-    >>> print(config.indicators[0].var_name)   # 'ema'
-    >>> print(config.indicators[0].function_name)  # 'EMA'
-    """
+    """Walks a ``StandardStrategy`` object tree and returns a ``StrategyConfig``."""
 
     def introspect(self, strategy: StandardStrategy) -> StrategyConfig:
-        """Introspect a ``StandardStrategy`` and return a ``StrategyConfig``.
+        """Introspect a ``StandardStrategy`` and return a ``StrategyConfig``."""
 
-        Parameters
-        ----------
-        strategy : StandardStrategy
-            The strategy to introspect.
-
-        Returns
-        -------
-        StrategyConfig
-            Fully structured configuration ready for MQL5 template rendering.
-        """
         # First pass: collect types and params for var-name generation
         indicator_types: list[str] = []
         indicator_params_list: list[dict] = []
@@ -394,6 +352,7 @@ class StrategyIntrospector:
                     var_name=var_name,
                     input_prefix=input_prefix,
                     function_name=function_name,
+                    lag=indicator.lag,          # <-- new: read from indicator
                 )
             )
 

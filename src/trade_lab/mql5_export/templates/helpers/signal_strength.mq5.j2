@@ -9,50 +9,56 @@
     cma            — tanh((price - expanding_mean) / rolling_std)  [custom loop]
     rsi            — tanh((50 - rsi) / 20)               [MathTanh + CopyBuffer]
     macd           — raw signal line value (no tanh)      [CopyBuffer]
-    momentum       — sign(iClose(0) - iClose(period))    [custom diff]
+    momentum       — sign(close[lag] - close[lag+period]) [custom diff]
     larry_williams — sign(ewm_mean / ewm_std)            [custom EWM loop]
+
+  Lag support: all CopyBuffer calls use `ind.lag` as the bar offset.
+  For custom indicators, bar indices are shifted by `ind.lag` as well.
 #}
 {% for ind in indicators %}
 //------------------------------------------------------------------
 // Get{{ ind.function_name }}Strength()
-// Python: {{ ind.class_name }}({% for k, v in ind.params.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}).to_signal_strength(df)
+// Python: {{ ind.class_name }}({% for k, v in ind.params.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}{% if ind.lag > 0 %}, lag={{ ind.lag }}{% endif %}).to_signal_strength(df)
 // Weight in combined formula: {{ "%.4f"|format(ind.weight) }}
+{% if ind.lag > 0 %}
+// Lag: {{ ind.lag }} bar(s) — reads historical value {{ ind.lag }} bar(s) ago.
+{% endif %}
 //------------------------------------------------------------------
 double Get{{ ind.function_name }}Strength()
   {
 {% if ind.is_ma_type %}
-   // Read MA value from handle buffer.
+   // Read MA value from handle buffer at offset lag={{ ind.lag }}.
    // Then: tanh((price - ma) / rolling_std)  — price above MA is bullish.
-   if(CopyBuffer(handle_{{ ind.var_name }}, 0, 0, 1, buf_{{ ind.var_name }}) <= 0)
+   if(CopyBuffer(handle_{{ ind.var_name }}, 0, {{ ind.lag }}, 1, buf_{{ ind.var_name }}) <= 0)
      {
       PrintFormat("Get{{ ind.function_name }}Strength: CopyBuffer failed (%d)", GetLastError());
       return 0.0;
      }
    double ma_val  = buf_{{ ind.var_name }}[0];
-   double price   = GetAppliedPrice(0, {{ ind.applied_price }});
-   double std_val = RollingStd({{ ind.input_prefix }}_Period, 0, {{ ind.applied_price }});
+   double price   = GetAppliedPrice({{ ind.lag }}, {{ ind.applied_price }});
+   double std_val = RollingStd({{ ind.input_prefix }}_Period, {{ ind.lag }}, {{ ind.applied_price }});
    if(std_val == 0.0) return 0.0;
    return MathTanh((price - ma_val) / std_val);
 
 {% elif ind.indicator_type == 'cma' %}
-   // CMA: expanding mean from bar 0 (all available history).
+   // CMA: expanding mean from bar 0 (all available history) at offset lag={{ ind.lag }}.
    // Python: df[column].expanding(min_periods=period).mean()
    // NOTE: computationally intensive — loops over all bars each call.
    int total = iBars(_Symbol, PERIOD_CURRENT);
-   if(total < {{ ind.input_prefix }}_Period) return 0.0;
+   if(total < {{ ind.input_prefix }}_Period + {{ ind.lag }}) return 0.0;
    double sum = 0.0;
-   for(int i = 0; i < total; i++)
+   for(int i = {{ ind.lag }}; i < total; i++)
       sum += GetAppliedPrice(i, {{ ind.applied_price }});
-   double cma_val = sum / total;
-   double price   = GetAppliedPrice(0, {{ ind.applied_price }});
-   double std_val = RollingStd({{ ind.input_prefix }}_Period, 0, {{ ind.applied_price }});
+   double cma_val = sum / (total - {{ ind.lag }});
+   double price   = GetAppliedPrice({{ ind.lag }}, {{ ind.applied_price }});
+   double std_val = RollingStd({{ ind.input_prefix }}_Period, {{ ind.lag }}, {{ ind.applied_price }});
    if(std_val == 0.0) return 0.0;
    return MathTanh((price - cma_val) / std_val);
 
 {% elif ind.indicator_type == 'rsi' %}
    // RSI: mean-reversion interpretation — RSI > 70 bearish, RSI < 30 bullish.
    // Python: tanh((50 - rsi) / 20)
-   if(CopyBuffer(handle_{{ ind.var_name }}, 0, 0, 1, buf_{{ ind.var_name }}) <= 0)
+   if(CopyBuffer(handle_{{ ind.var_name }}, 0, {{ ind.lag }}, 1, buf_{{ ind.var_name }}) <= 0)
      {
       PrintFormat("Get{{ ind.function_name }}Strength: CopyBuffer failed (%d)", GetLastError());
       return 0.0;
@@ -66,7 +72,7 @@ double Get{{ ind.function_name }}Strength()
    // Buffer 0 = MACD line (fast_ema - slow_ema)
    // Buffer 1 = Signal line (EMA of MACD line, span=9)
    double buf_macd_signal[1];
-   if(CopyBuffer(handle_{{ ind.var_name }}, 1, 0, 1, buf_macd_signal) <= 0)
+   if(CopyBuffer(handle_{{ ind.var_name }}, 1, {{ ind.lag }}, 1, buf_macd_signal) <= 0)
      {
       PrintFormat("Get{{ ind.function_name }}Strength: CopyBuffer failed (%d)", GetLastError());
       return 0.0;
@@ -75,39 +81,31 @@ double Get{{ ind.function_name }}Strength()
 
 {% elif ind.indicator_type == 'momentum' %}
    // Momentum: price difference over period, then sign().
-   // Python: sign(df[column].diff(period))
-   // Using iClose directly to match diff() on Close prices.
+   // Python: sign(df[column].diff(period))  at lag={{ ind.lag }}
    int    period = {{ ind.input_prefix }}_Period;
-   double diff   = GetAppliedPrice(0, {{ ind.applied_price }})
-                   - GetAppliedPrice(period, {{ ind.applied_price }});
+   double diff   = GetAppliedPrice({{ ind.lag }}, {{ ind.applied_price }})
+                   - GetAppliedPrice({{ ind.lag }} + period, {{ ind.applied_price }});
    return diff > 0.0 ? 1.0 : diff < 0.0 ? -1.0 : 0.0;
 
 {% elif ind.indicator_type == 'larry_williams' %}
-   // Larry Williams: EWM mean / EWM std, then sign().
-   // Python: ewm(span=period).mean() / ewm(span=period).std()
-   // Approximated with a finite window of 5×period bars (exponential decay
-   // makes older values negligible: weight at 5×period ≈ e^(-5) < 0.01).
+   // Larry Williams %R: (Highest High - Close) / (Highest High - Lowest Low) * -100
+   // Python: tanh((-50 - %R) / 20)  at lag={{ ind.lag }}
    int    period  = {{ ind.input_prefix }}_Period;
-   double alpha   = 1.0 / period;       // alpha = 1/span, matching pandas ewm(span=period)
-   int    lookback = MathMin(period * 5, iBars(_Symbol, PERIOD_CURRENT) - 1);
-   if(lookback < 2) return 0.0;
-
-   // Initialise with oldest bar in the window, then apply EWM forward.
-   double ema_mean = GetAppliedPrice(lookback, {{ ind.applied_price }});
-   double ema_sq   = ema_mean * ema_mean;
-   for(int i = lookback - 1; i >= 0; i--)
+   int    lookback = period - 1;
+   double highest = -DBL_MAX;
+   double lowest  =  DBL_MAX;
+   for(int i = {{ ind.lag }}; i <= {{ ind.lag }} + lookback; i++)
      {
-      double p = GetAppliedPrice(i, {{ ind.applied_price }});
-      ema_mean = alpha * p + (1.0 - alpha) * ema_mean;
-      ema_sq   = alpha * p * p + (1.0 - alpha) * ema_sq;
+      double h = iHigh(_Symbol, PERIOD_CURRENT, i);
+      double l = iLow(_Symbol,  PERIOD_CURRENT, i);
+      if(h > highest) highest = h;
+      if(l < lowest)  lowest  = l;
      }
-   // EWM variance: E[x²] - E[x]²  (population estimate from EWM moments)
-   double variance = ema_sq - ema_mean * ema_mean;
-   if(variance <= 0.0) return 0.0;
-   double ema_std = MathSqrt(variance);
-   if(ema_std == 0.0) return 0.0;
-   double lw = ema_mean / ema_std;
-   return lw > 0.0 ? 1.0 : lw < 0.0 ? -1.0 : 0.0;
+   double denom = highest - lowest;
+   double lwr   = (denom != 0.0)
+                  ? (highest - iClose(_Symbol, PERIOD_CURRENT, {{ ind.lag }})) / denom * -100.0
+                  : -50.0;
+   return MathTanh((-50.0 - lwr) / 20.0);
 
 {% endif %}
   }

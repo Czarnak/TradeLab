@@ -82,46 +82,49 @@ def _make_jinja_env() -> jinja2.Environment:
     )
 
 
-def _enrich_indicator(ind: IndicatorConfig) -> dict:
+def _enrich_indicator(ind) -> dict:
     """Return a flat dict merging IndicatorConfig fields with registry metadata.
 
     The template receives this dict rather than the dataclass so it does not
     need to navigate Python-specific objects or know the registry structure.
-
-    Parameters
-    ----------
-    ind : IndicatorConfig
-        Introspected indicator config.
-
-    Returns
-    -------
-    dict
-        All IndicatorConfig fields plus descriptor fields from
-        ``INDICATOR_REGISTRY``, plus convenience booleans and ``applied_price``.
     """
+    from trade_lab.mql5_export.indicator_registry import APPLIED_PRICE_MAP, INDICATOR_REGISTRY
+    from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
+    from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
+
+    _INDICATOR_CLASS_MAP = {
+        "sma": SMA, "ema": EMA, "wma": WMA, "cma": CMA,
+        "rsi": RSI, "macd": MACD, "momentum": Momentum,
+        "larry_williams": LarryWilliams,
+    }
+
     cls = _INDICATOR_CLASS_MAP[ind.indicator_type]
     desc = INDICATOR_REGISTRY[cls]
     column = ind.params.get("column", "Close")
     return {
         # --- IndicatorConfig fields ---
-        "indicator_type": ind.indicator_type,
-        "class_name": ind.class_name,
-        "params": ind.params,
-        "weight": ind.weight,
-        "signals": ind.signals,
-        "output_columns": ind.output_columns,
-        "var_name": ind.var_name,
-        "input_prefix": ind.input_prefix,
-        "function_name": ind.function_name,
+        "indicator_type":  ind.indicator_type,
+        "class_name":      ind.class_name,
+        "params":          ind.params,
+        "weight":          ind.weight,
+        "signals":         ind.signals,
+        "output_columns":  ind.output_columns,
+        "var_name":        ind.var_name,
+        "input_prefix":    ind.input_prefix,
+        "function_name":   ind.function_name,
+        "lag":             ind.lag,             # <-- new
         # --- Registry descriptor fields ---
         "uses_builtin_handle": desc.uses_builtin_handle,
-        "builtin_function": desc.builtin_function,
-        "ma_method": desc.ma_method,
-        "n_buffers": desc.n_buffers,
+        "builtin_function":    desc.builtin_function,
+        "ma_method":           desc.ma_method,
+        "n_buffers":           desc.n_buffers,
         # --- Computed convenience fields ---
-        "applied_price": APPLIED_PRICE_MAP.get(column, "PRICE_CLOSE"),
-        "is_ma_type": ind.indicator_type in ("sma", "ema", "wma"),
+        "applied_price":  APPLIED_PRICE_MAP.get(column, "PRICE_CLOSE"),
+        "is_ma_type":     ind.indicator_type in ("sma", "ema", "wma"),
     }
+
+
+
 
 
 def _format_indicator_summary(ind: dict) -> str:

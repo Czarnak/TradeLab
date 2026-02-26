@@ -4,19 +4,21 @@ This module provides Optuna-driven hyperparameter search over indicator
 configurations (periods, lags, inclusion) combined with Keras model
 training and backtest evaluation.
 
+Lag is now a first-class property of every indicator and signal — the former
+``LaggedIndicator`` wrapper has been removed.  Pass ``lag=k`` directly to any
+indicator constructor instead.
+
 Example workflow
 ----------------
 >>> from trade_lab.indicators.moving_averages import EMA, SMA
->>> from trade_lab.ml_optimization import (
-...     IndicatorSpec, MLOptimizer, ModelPruner,
-... )
+>>> from trade_lab.ml_optimization import IndicatorSpec, MLOptimizer
 >>>
 >>> # 1. Define indicator search space
 >>> specs = [
 ...     IndicatorSpec('ema', EMA, period_low=5, period_high=50,
-...                   lag_low=0, lag_high=10, max_lags=3, optional=False),
+...                   lag_values=[0, 1, 2, 5], optional=False),
 ...     IndicatorSpec('sma', SMA, period_low=10, period_high=100,
-...                   lag_low=0, lag_high=20, max_lags=5, optional=True),
+...                   lag_values=[0, 1, 3], optional=True),
 ... ]
 >>>
 >>> # 2. Define model factory
@@ -46,26 +48,20 @@ Example workflow
 >>> print(result.summary())
 >>>
 >>> # 4. Prune
+>>> from trade_lab.ml_optimization import ModelPruner
 >>> pruner = ModelPruner(percentile=20)
 >>> pruned_result, report = pruner.prune_result(result)
 >>> print(f"Zeroed {report['zero_fraction']:.1%} of weights")
 >>> print(f"Dead features: {report['dead_features']}")
->>>
->>> # 5. Backtest pruned result
->>> from trade_lab.backtesting.engine import BacktestEngine
->>> engine = BacktestEngine(strategy=pruned_result.best_strategy)
->>> bt = engine.run_on(test_df)
->>> print(bt.metrics)
 """
 
-from trade_lab.ml_optimization.feature_builder import FeatureMatrix, LaggedIndicator
+from trade_lab.ml_optimization.feature_builder import FeatureMatrix
 from trade_lab.ml_optimization.optimizer import MLOptimizer
 from trade_lab.ml_optimization.pruning import ModelPruner
 from trade_lab.ml_optimization.result import MLOptimizationResult
 from trade_lab.ml_optimization.search_space import IndicatorSpec
 
 __all__ = [
-    'LaggedIndicator',
     'FeatureMatrix',
     'IndicatorSpec',
     'MLOptimizer',

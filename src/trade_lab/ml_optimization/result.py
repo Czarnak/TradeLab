@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     import optuna
     from sklearn.preprocessing import StandardScaler
 
-    from trade_lab.ml_optimization.feature_builder import LaggedIndicator
+    from trade_lab.indicators.base import BaseIndicator
     from trade_lab.strategies.ml_strategy import MLStrategy
 
 
@@ -35,8 +35,10 @@ class MLOptimizationResult:
         The underlying Optuna study object.
     best_model : keras.Model
         Retrained Keras model with named inputs matching ``feature_names``.
-    best_feature_spec : list[LaggedIndicator]
-        Lagged indicator configuration of the best trial.
+    best_feature_spec : list[BaseIndicator]
+        Indicators of the best trial, each with its ``lag`` baked in.
+        Replaces the former ``list[LaggedIndicator]`` — lag is now a
+        first-class attribute of every indicator.
     best_strategy : MLStrategy
         Ready-to-use strategy wrapping ``best_model`` and indicators.
     feature_names : list[str]
@@ -63,7 +65,7 @@ class MLOptimizationResult:
     trials_df: pd.DataFrame
     study: 'optuna.Study'
     best_model: Any  # keras.Model
-    best_feature_spec: list['LaggedIndicator']
+    best_feature_spec: list['BaseIndicator']
     best_strategy: 'MLStrategy'
     feature_names: list[str]
     scaler: 'StandardScaler'
@@ -74,51 +76,29 @@ class MLOptimizationResult:
     n_trials_failed: int = 0
 
     def summary(self) -> str:
-        """Return a human-readable summary of the ML optimisation result.
-
-        Returns
-        -------
-        str
-            Multi-line summary string ready for printing.
-        """
+        """Return a human-readable summary of the ML optimisation result."""
         lines = [
-            "=" * 54,
-            "  ML Optimisation Result",
-            "=" * 54,
-            f"  Metric     : {self.metric} ({self.direction})",
-            f"  Best value : {self.best_value:.4f}  (val)",
-            f"  Trials     : {self.n_trials_completed} completed, "
+            f"MLOptimizationResult",
+            f"  Metric:     {self.metric} ({self.direction})",
+            f"  Best value: {self.best_value:.4f}",
+            f"  Trials:     {self.n_trials_completed} completed, "
             f"{self.n_trials_failed} failed/pruned",
-            f"  Features   : {len(self.feature_names)}",
+            f"  Features:   {len(self.feature_names)}",
             "",
-            "  Best parameters:",
+            "  Best indicators:",
         ]
-        for k, v in self.best_params.items():
-            lines.append(f"    {k:<30} {v}")
-
-        # Indicator and lag summary
-        lines.append("")
-        lines.append("  Selected indicators:")
-        for li in self.best_feature_spec:
-            ind = li.indicator
-            cls_name = type(ind).__name__
-            period = getattr(ind, 'period', '?')
-            lags_str = ', '.join(str(lag) for lag in li.lags)
-            lines.append(f"    {cls_name}(period={period})  lags=[{lags_str}]")
-
-        # Validation metrics
-        val_val = self.val_metrics.get(self.metric, float('nan'))
+        for ind in self.best_feature_spec:
+            lag_str = f", lag={ind.lag}" if ind.lag > 0 else ""
+            lines.append(f"    {type(ind).__name__}(period={ind.period}{lag_str})")
         lines += [
             "",
-            f"  Validation {self.metric:<22} {val_val:.4f}",
+            "  Validation metrics:",
         ]
-
-        # Test metrics
-        if self.test_metrics is not None:
-            test_val = self.test_metrics.get(self.metric, float('nan'))
-            lines.append(
-                f"  Test       {self.metric:<22} {test_val:.4f}",
-            )
-
-        lines.append("=" * 54)
+        for k, v in self.val_metrics.items():
+            lines.append(f"    {k}: {v:.4f}" if isinstance(v, float) else f"    {k}: {v}")
+        if self.test_metrics:
+            lines.append("")
+            lines.append("  Test metrics:")
+            for k, v in self.test_metrics.items():
+                lines.append(f"    {k}: {v:.4f}" if isinstance(v, float) else f"    {k}: {v}")
         return "\n".join(lines)

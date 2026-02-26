@@ -147,15 +147,18 @@ INDICATOR_REGISTRY: dict[type, MQL5IndicatorDescriptor] = {
         applied_price_map=APPLIED_PRICE_MAP,
     ),
     LarryWilliams: MQL5IndicatorDescriptor(
-        # TradeLab: ewm(period).mean() / ewm(period).std() then sign().
-        # Implemented as a custom inline EMA+variance accumulation loop.
+        # No built-in equivalent that matches the sign convention.
+        # Custom implementation: rolling max/min over period bars.
         uses_builtin_handle=False,
         builtin_function=None,
         ma_method=None,
         n_buffers=0,
         signal_strength_formula=(
-            "lw = ema_mean / ema_std; "
-            "return lw > 0.0 ? 1.0 : lw < 0.0 ? -1.0 : 0.0;"
+            "highest = max(High[lag..lag+period-1]); "
+            "lowest  = min(Low[lag..lag+period-1]); "
+            "denom   = highest - lowest; "
+            "lwr     = denom != 0 ? (highest - close) / denom * -100 : -50; "
+            "return MathTanh((-50.0 - lwr) / 20.0);"
         ),
         applied_price_map=APPLIED_PRICE_MAP,
     ),
