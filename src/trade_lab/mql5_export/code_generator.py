@@ -19,7 +19,7 @@ except ImportError as _exc:
 from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
 from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
 from trade_lab.mql5_export.indicator_registry import APPLIED_PRICE_MAP, INDICATOR_REGISTRY
-from trade_lab.mql5_export.introspector import IndicatorConfig, StrategyIntrospector
+from trade_lab.mql5_export.introspector import StrategyIntrospector
 from trade_lab.mql5_export.validators import ValidationResult, validate_strategy
 
 # ---------------------------------------------------------------------------
@@ -88,7 +88,6 @@ def _enrich_indicator(ind) -> dict:
     The template receives this dict rather than the dataclass so it does not
     need to navigate Python-specific objects or know the registry structure.
     """
-    from trade_lab.mql5_export.indicator_registry import APPLIED_PRICE_MAP, INDICATOR_REGISTRY
     from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
     from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
 

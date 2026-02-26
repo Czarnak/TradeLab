@@ -21,20 +21,24 @@ from trade_lab.strategies.standard import StandardStrategy
 
 
 class _UnsupportedSignal(BaseSignal):
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
-        return df
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        out = self.get_data(df.copy())
+        out[self._raw_output_columns[0]] = 0.0
+        return out
 
     def plot(self, df: pd.DataFrame):
         return None
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return ['signal__unsupported']
 
 
 class _UnsupportedIndicator(BaseIndicator):
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
-        return self.get_data(df)
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        out = self.get_data(df.copy())
+        out[self._raw_output_columns[0]] = 0.0
+        return out
 
     def to_signal_strength(self, df: pd.DataFrame) -> pd.Series:
         return pd.Series(np.zeros(len(df)), index=df.index)
@@ -43,7 +47,7 @@ class _UnsupportedIndicator(BaseIndicator):
         return None
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return ['indicator__unsupported']
 
 

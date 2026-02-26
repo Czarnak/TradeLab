@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -13,7 +14,7 @@ import trade_lab.ml_optimization.objective as ml_objective
 import trade_lab.ml_optimization.optimizer as ml_optimizer
 import trade_lab.ml_optimization.pruning as ml_pruning
 from trade_lab.indicators.base import BaseIndicator
-from trade_lab.ml_optimization.feature_builder import FeatureMatrix, LaggedIndicator
+from trade_lab.ml_optimization.feature_builder import FeatureMatrix
 from trade_lab.ml_optimization.objective import (
     MLObjective,
     _deserialize_specs,
@@ -39,13 +40,13 @@ def _sample_df(n: int = 8) -> pd.DataFrame:
 
 
 class _DummyIndicator(BaseIndicator):
-    def __init__(self, period: int = 2):
-        super().__init__()
+    def __init__(self, period: int = 2, lag: int = 0):
+        super().__init__(lag=lag)
         self.period = period
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
-        out = df.copy()
-        out[self.output_columns[0]] = out["Close"].rolling(self.period).mean()
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        out = self.get_data(df.copy())
+        out[self._raw_output_columns[0]] = out["Close"].rolling(self.period).mean()
         return out
 
     def to_signal_strength(self, df: pd.DataFrame) -> pd.Series:
@@ -55,7 +56,7 @@ class _DummyIndicator(BaseIndicator):
         return None
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return [f"indicator__dummy_{self.period}"]
 
 
@@ -202,29 +203,25 @@ def test_ml_optimization_public_api_exports():
 
 def test_indicator_spec_validation_rules():
     with pytest.raises(ValueError, match="valid Python identifier"):
-        IndicatorSpec("bad-name", _DummyIndicator, 2, 5, 0, 3)
+        IndicatorSpec("bad-name", _DummyIndicator, 2, 5, [0, 3])
     with pytest.raises(ValueError, match="period_low"):
-        IndicatorSpec("x", _DummyIndicator, 5, 5, 0, 3)
-    with pytest.raises(ValueError, match="lag_low must be >= 0"):
-        IndicatorSpec("x", _DummyIndicator, 2, 5, -1, 3)
-    with pytest.raises(ValueError, match="lag_low .* must be < lag_high"):
-        IndicatorSpec("x", _DummyIndicator, 2, 5, 2, 2)
-    with pytest.raises(ValueError, match="max_lags must be >= 1"):
-        IndicatorSpec("x", _DummyIndicator, 2, 5, 0, 2, max_lags=0)
+        IndicatorSpec("x", _DummyIndicator, 5, 5, [0, 3])
+    with pytest.raises(ValueError, match="lag_values must contain at least one value"):
+        IndicatorSpec("x", _DummyIndicator, 2, 5, [])
+    with pytest.raises(ValueError, match="All lag_values must be >= 0"):
+        IndicatorSpec("x", _DummyIndicator, 2, 5, [0, -1])
 
-    spec = IndicatorSpec("ema", _DummyIndicator, 2, 5, 0, 3, max_lags=2, optional=False)
+    spec = IndicatorSpec("ema", _DummyIndicator, 2, 5, [0, 3], optional=False)
     assert spec.optional is False
 
 
-def test_lagged_indicator_and_feature_matrix_scaling_flow():
-    li = LaggedIndicator(_DummyIndicator(period=2), lags=[2, 1, 2, 0])
-    assert li.lags == [0, 1, 2]
-
-    out = li.compute(_sample_df())
-    for col in li.output_columns:
+def test_indicator_lag_and_feature_matrix_scaling_flow():
+    indicator = _DummyIndicator(period=2, lag=2)
+    out = indicator.compute(_sample_df())
+    for col in indicator.output_columns:
         assert col in out.columns
 
-    fm = FeatureMatrix([li])
+    fm = FeatureMatrix([indicator])
     X_train, y_train = fm.build(_sample_df(10), fit_scaler=True)
     X_val, y_val = fm.build(_sample_df(10), fit_scaler=False)
 
@@ -235,17 +232,17 @@ def test_lagged_indicator_and_feature_matrix_scaling_flow():
 
 
 def test_serialize_and_deserialize_specs_round_trip():
-    raw = _serialize_specs([(_DummyIndicator, 5, [0, 2, 4])])
+    raw = _serialize_specs([(_DummyIndicator, 5, 2)])
     decoded = _deserialize_specs(raw)
-    cls, period, lags = decoded[0]
+    cls, period, lag = decoded[0]
     assert cls is _DummyIndicator
     assert period == 5
-    assert lags == [0, 2, 4]
+    assert lag == 2
 
 
 def test_ml_objective_prunes_when_no_indicator_selected(monkeypatch):
     _stub_optuna_integration(monkeypatch)
-    spec = IndicatorSpec("opt_ind", _DummyIndicator, 2, 5, 0, 2, optional=True)
+    spec = IndicatorSpec("opt_ind", _DummyIndicator, 2, 5, [0, 1, 2], optional=True)
     obj = MLObjective(
         indicator_specs=[spec],
         model_factory=_fake_model_factory,
@@ -268,7 +265,7 @@ def test_ml_objective_prunes_when_no_indicator_selected(monkeypatch):
 
 def test_ml_objective_prunes_when_no_training_samples(monkeypatch):
     _stub_optuna_integration(monkeypatch)
-    spec = IndicatorSpec("req_ind", _DummyIndicator, 2, 5, 0, 2, optional=False)
+    spec = IndicatorSpec("req_ind", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)
     obj = MLObjective(
         indicator_specs=[spec],
         model_factory=_fake_model_factory,
@@ -293,7 +290,7 @@ def test_ml_objective_prunes_when_no_training_samples(monkeypatch):
 
 def test_ml_objective_happy_path_and_metric_nan_prune(monkeypatch):
     _stub_optuna_integration(monkeypatch)
-    spec = IndicatorSpec("req_ind", _DummyIndicator, 2, 5, 0, 2, optional=False)
+    spec = IndicatorSpec("req_ind", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)
     obj = MLObjective(
         indicator_specs=[spec],
         model_factory=_fake_model_factory,
@@ -354,36 +351,36 @@ def test_ml_optimizer_direction_storage_and_optimize_wiring(monkeypatch, tmp_pat
     assert _infer_direction("sharpe_ratio") == "maximize"
 
     opt = MLOptimizer(
-        indicator_specs=[IndicatorSpec("i", _DummyIndicator, 2, 5, 0, 2, optional=False)],
+        indicator_specs=[IndicatorSpec("i", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)],
         model_factory=_fake_model_factory,
         train_df=_sample_df(),
         val_df=_sample_df(),
+        metric="sharpe_ratio",
         n_jobs=1,
         n_trials=2,
     )
-    assert opt._build_storage() is None
+    assert opt._resolve_storage() is None
 
     opt2 = MLOptimizer(
-        indicator_specs=[IndicatorSpec("i", _DummyIndicator, 2, 5, 0, 2, optional=False)],
+        indicator_specs=[IndicatorSpec("i", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)],
         model_factory=_fake_model_factory,
         train_df=_sample_df(),
         val_df=_sample_df(),
+        metric="sharpe_ratio",
         n_jobs=2,
-        study_name="ml_study",
+        storage_path="ml_study.db",
     )
     monkeypatch.chdir(tmp_path)
-    storage = opt2._build_storage()
-    assert storage is not None and storage.startswith("sqlite:///")
-    assert storage.endswith("ml_study.db")
+    storage = opt2._resolve_storage()
+    assert storage == "sqlite:///ml_study.db"
 
     captured = {}
 
     class FakeStudy:
-        def optimize(self, objective, n_trials, n_jobs, catch, show_progress_bar):
+        def optimize(self, objective, n_trials, n_jobs, show_progress_bar):
             captured["objective"] = objective
             captured["n_trials"] = n_trials
             captured["n_jobs"] = n_jobs
-            captured["catch"] = catch
             captured["show_progress_bar"] = show_progress_bar
 
     def fake_create_study(**kwargs):
@@ -397,18 +394,18 @@ def test_ml_optimizer_direction_storage_and_optimize_wiring(monkeypatch, tmp_pat
     assert out == "DONE"
     assert captured["n_trials"] == 2
     assert captured["n_jobs"] == 1
-    assert captured["catch"] == (Exception,)
-    assert captured["show_progress_bar"] is True
+    assert captured["show_progress_bar"] is False
     assert isinstance(captured["objective"], MLObjective)
 
 
 def test_ml_optimizer_build_result_and_trials_df(monkeypatch):
-    spec = IndicatorSpec("i", _DummyIndicator, 2, 5, 0, 2, optional=False)
+    spec = IndicatorSpec("i", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)
     optimizer = MLOptimizer(
         indicator_specs=[spec],
         model_factory=_fake_model_factory,
         train_df=_sample_df(),
         val_df=_sample_df(),
+        metric="sharpe_ratio",
         test_df=_sample_df(),
         n_epochs=1,
     )
@@ -416,7 +413,7 @@ def test_ml_optimizer_build_result_and_trials_df(monkeypatch):
     monkeypatch.setattr(
         ml_optimizer,
         "_deserialize_specs",
-        lambda raw: [(_DummyIndicator, 2, [0, 1])],
+        lambda raw: [(_DummyIndicator, 2, 1)],
     )
     monkeypatch.setattr(ml_optimizer, "_wrap_model", lambda model, names: SimpleNamespace(input_names=names, predict=lambda X: np.zeros(len(X))))
 
@@ -429,19 +426,23 @@ def test_ml_optimizer_build_result_and_trials_df(monkeypatch):
 
     monkeypatch.setattr(ml_optimizer, "BacktestEngine", FakeEngine)
 
+    t0_start = datetime(2026, 1, 1, 0, 0, 0)
+    t0_end = t0_start + timedelta(seconds=2)
     trial_complete = SimpleNamespace(
         number=0,
         value=1.23,
         state=ml_optimizer.optuna.trial.TrialState.COMPLETE,
-        duration=timedelta(seconds=2),
+        datetime_start=t0_start,
+        datetime_complete=t0_end,
         params={"p": 1},
-        user_attrs={"feature_names": ["a", "b"], "lagged_indicator_specs": "raw"},
+        user_attrs={"feature_names": ["a", "b"], "indicator_specs": "raw"},
     )
     trial_fail = SimpleNamespace(
         number=1,
         value=None,
         state=ml_optimizer.optuna.trial.TrialState.FAIL,
-        duration=None,
+        datetime_start=None,
+        datetime_complete=None,
         params={},
         user_attrs={},
     )
@@ -456,14 +457,14 @@ def test_ml_optimizer_build_result_and_trials_df(monkeypatch):
     assert result.test_metrics is not None
     assert result.n_trials_completed == 1
     assert result.n_trials_failed == 1
-    assert list(result.trials_df["trial_number"]) == [0, 1]
+    assert list(result.trials_df["trial"]) == [0, 1]
 
     empty = MLOptimizer._build_trials_df(SimpleNamespace(trials=[]))
     assert empty.empty
 
 
 def test_ml_optimization_result_summary_contains_key_sections():
-    li = LaggedIndicator(_DummyIndicator(period=2), [0, 1])
+    ind = _DummyIndicator(period=2, lag=1)
     result = MLOptimizationResult(
         best_params={"x": 1},
         best_value=0.5,
@@ -472,7 +473,7 @@ def test_ml_optimization_result_summary_contains_key_sections():
         trials_df=pd.DataFrame(),
         study=SimpleNamespace(),
         best_model=SimpleNamespace(),
-        best_feature_spec=[li],
+        best_feature_spec=[ind],
         best_strategy=SimpleNamespace(),
         feature_names=["f1", "f2"],
         scaler=SimpleNamespace(),
@@ -483,35 +484,34 @@ def test_ml_optimization_result_summary_contains_key_sections():
         n_trials_failed=1,
     )
     text = result.summary()
-    assert "ML Optimisation Result" in text
-    assert "Selected indicators" in text
-    assert "Validation sharpe_ratio" in text
-    assert "Test       sharpe_ratio" in text
+    assert "MLOptimizationResult" in text
+    assert "Best indicators" in text
+    assert "Validation metrics" in text
+    assert "Test metrics" in text
 
 
 def test_model_pruner_init_and_prune_model_threshold_percentile(monkeypatch):
     keras = _install_fake_keras(monkeypatch)
 
-    with pytest.raises(ValueError, match="Exactly one"):
-        ml_pruning.ModelPruner(threshold=None, percentile=None)
-    with pytest.raises(ValueError, match="Exactly one"):
-        ml_pruning.ModelPruner(threshold=0.1, percentile=10)
+    with pytest.raises(ValueError, match="percentile must be in"):
+        ml_pruning.ModelPruner(percentile=-0.1)
+    with pytest.raises(ValueError, match="percentile must be in"):
+        ml_pruning.ModelPruner(percentile=100.1)
 
     dense = keras.layers.Dense(name="dense_1")
     dense.set_weights([np.array([[0.01, 0.02], [0.5, 0.8]]), np.array([0.0, 0.0])])
     model = keras.Model(layers=[dense])
 
-    pruner = ml_pruning.ModelPruner(threshold=0.05)
+    pruner = ml_pruning.ModelPruner(percentile=50)
     pruned, report = pruner.prune_model(model, feature_names=["f1", "f2"])
-    assert report["total_weights"] == 4
-    assert report["zeroed_weights"] >= 2
-    assert "dense_1" in report["layers"]
+    assert pruned is model
+    assert report["zero_fraction"] > 0
     assert "f1" in report["dead_features"]
+    assert "f2" in report["surviving_features"]
 
-    pruner_pct = ml_pruning.ModelPruner(percentile=50)
-    _, report_pct = pruner_pct.prune_model(model)
-    assert report_pct["total_weights"] == 4
-    assert report_pct["zeroed_weights"] >= 1
+    pruner_pct = ml_pruning.ModelPruner(percentile=50, per_layer=True)
+    _, report_pct = pruner_pct.prune_model(model, feature_names=["f1", "f2"])
+    assert report_pct["zero_fraction"] > 0
 
 
 def test_model_pruner_prune_result_updates_result(monkeypatch):
@@ -522,8 +522,8 @@ def test_model_pruner_prune_result_updates_result(monkeypatch):
     dense.set_weights([np.array([[0.0, 0.0], [0.2, 0.3]]), np.array([0.0, 0.0])])
     base_model = keras.Model(layers=[dense])
 
-    li_a = LaggedIndicator(_DummyIndicator(period=2), [0])
-    li_b = LaggedIndicator(_DummyIndicator(period=3), [0])
+    li_a = _DummyIndicator(period=2)
+    li_b = _DummyIndicator(period=3)
     result = MLOptimizationResult(
         best_params={"x": 1},
         best_value=0.5,
@@ -540,7 +540,7 @@ def test_model_pruner_prune_result_updates_result(monkeypatch):
         train_df=_sample_df(12),
     )
 
-    pruner = ml_pruning.ModelPruner(threshold=0.1)
+    pruner = ml_pruning.ModelPruner(percentile=10)
 
     def fake_prune_model(model, feature_names=None):
         report = {

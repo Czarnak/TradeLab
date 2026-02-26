@@ -78,7 +78,7 @@ class MLOptimizationResult:
     def summary(self) -> str:
         """Return a human-readable summary of the ML optimisation result."""
         lines = [
-            f"MLOptimizationResult",
+            "MLOptimizationResult",
             f"  Metric:     {self.metric} ({self.direction})",
             f"  Best value: {self.best_value:.4f}",
             f"  Trials:     {self.n_trials_completed} completed, "

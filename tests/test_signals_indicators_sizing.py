@@ -32,18 +32,18 @@ class _PassthroughSignal(BaseSignal):
         super().__init__(source)
         self.calls = 0
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         self.calls += 1
         data = self.get_data(df)
         out = data.copy()
-        out["signal__dummy"] = 1.0
+        out[self._raw_output_columns[0]] = 1.0
         return out
 
     def plot(self, df: pd.DataFrame):
         return None
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return ["signal__dummy"]
 
 
@@ -52,11 +52,11 @@ class _PassthroughIndicator(BaseIndicator):
         super().__init__(*signals)
         self.calls = 0
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         self.calls += 1
         data = self.get_data(df)
         out = data.copy()
-        out["indicator__dummy"] = 2.0
+        out[self._raw_output_columns[0]] = 2.0
         return out
 
     def to_signal_strength(self, df: pd.DataFrame) -> pd.Series:
@@ -66,7 +66,7 @@ class _PassthroughIndicator(BaseIndicator):
         return None
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return ["indicator__dummy"]
 
 
@@ -169,4 +169,3 @@ def test_risk_based_position_sizer_validation_and_compute_size():
     assert sizer.compute_size(0.5, equity=1000, price=10, volatility=None) == 0.0
     assert sizer.compute_size(0.5, equity=1000, price=10, volatility=0) == 0.0
     assert sizer.compute_size(-0.5, equity=1000, price=10, volatility=5.0) == 5.0
-

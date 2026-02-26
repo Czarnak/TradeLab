@@ -14,10 +14,11 @@ class DummyIndicator(BaseIndicator):
         self.compute_calls = 0
         self.signal_calls = 0
 
-    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         self.compute_calls += 1
-        df[f"indicator__{self.name}"] = self.values.to_numpy()
-        return df
+        out = self.get_data(df.copy())
+        out[self._raw_output_columns[0]] = self.values.to_numpy()
+        return out
 
     def to_signal_strength(self, df: pd.DataFrame) -> pd.Series:
         self.signal_calls += 1
@@ -27,7 +28,7 @@ class DummyIndicator(BaseIndicator):
         return None
 
     @property
-    def output_columns(self) -> list[str]:
+    def _raw_output_columns(self) -> list[str]:
         return [f"indicator__{self.name}"]
 
 
