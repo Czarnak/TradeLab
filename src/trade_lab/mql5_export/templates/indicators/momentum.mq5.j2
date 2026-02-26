@@ -1,0 +1,41 @@
+{#
+  indicators/momentum.mq5.j2  —  Standalone signal-strength function for Momentum.
+  -----------------------------------------------------------------------
+  This template renders a complete GetXxxStrength() function for a single
+  Momentum indicator. It is not included by ea_main.mq5.j2 (which delegates
+  to helpers/signal_strength.mq5.j2 for all indicator types inline); it exists
+  as a focused, self-contained reference implementation.
+
+  Momentum uses no builtin MQL5 indicator handle — it reads price directly
+  from the series via GetAppliedPrice().
+
+  Signal interpretation: purely directional (+1 / -1 / 0).
+  Price higher than `period` bars ago → bullish (+1).
+  Price lower  than `period` bars ago → bearish (-1).
+
+  Required context variables (from enriched IndicatorConfig dict):
+    ind.function_name : str    e.g. 'Momentum'
+    ind.input_prefix  : str    e.g. 'Momentum'
+    ind.applied_price : str    e.g. 'PRICE_CLOSE'
+    ind.params        : dict   {'period': 10, 'column': 'Close'}
+    ind.weight        : float
+
+  Prerequisites in the generated EA:
+    GetAppliedPrice()  — helper declared in SECTION 3
+#}
+//------------------------------------------------------------------
+// Get{{ ind.function_name }}Strength()
+// Python: Momentum({% for k, v in ind.params.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}).to_signal_strength(df)
+// Formula: sign(price[0] - price[period])
+//   +1.0  price is higher than `period` bars ago  → upward momentum
+//   -1.0  price is lower  than `period` bars ago  → downward momentum
+//    0.0  price unchanged
+// Weight in combined formula: {{ "%.4f"|format(ind.weight) }}
+//------------------------------------------------------------------
+double Get{{ ind.function_name }}Strength()
+  {
+   int    period = {{ ind.input_prefix }}_Period;
+   double diff   = GetAppliedPrice(0, {{ ind.applied_price }})
+                   - GetAppliedPrice(period, {{ ind.applied_price }});
+   return diff > 0.0 ? 1.0 : diff < 0.0 ? -1.0 : 0.0;
+  }

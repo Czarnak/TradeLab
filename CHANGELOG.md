@@ -4,6 +4,65 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [0.5.0] - 2026-02-26
+
+### Added
+
+- `mql5_export` module for translating a `StandardStrategy` into a complete,
+  ready-to-compile MetaTrader 5 Expert Advisor (`.mq5` file). Install the
+  optional dependency with `pip install 'TradeLab[mql5]'` (requires Jinja2).
+  - `validators.py`:
+    - `validate_strategy(strategy)` — pre-export checks; returns
+      `ValidationResult(is_valid, errors, warnings)`. Validates indicator and
+      signal types, position sizer type, and at least one indicator present.
+      Emits warnings for MACD (unbounded signal line) and CMA (expanding window
+      resets on EA restart).
+  - `introspector.py`:
+    - `StrategyIntrospector.introspect(strategy)` — walks a `StandardStrategy`
+      object tree and returns a `StrategyConfig` dataclass with fully resolved
+      `IndicatorConfig`, `SignalConfig`, and `SizingConfig` entries.
+    - Var-name generation: one indicator of a type → plain name (e.g. `ema`);
+      two of the same type → `_fast`/`_slow` ordered by period; three or more →
+      `_1`/`_2`/`_3`. Input prefixes preserve abbreviations: `EMA_Fast`, `RSI`,
+      `Larry_Williams` (not `Ema_Fast`).
+  - `indicator_registry.py`:
+    - `INDICATOR_REGISTRY` — maps all 8 indicator classes to
+      `MQL5IndicatorDescriptor` entries describing handle type, buffer count,
+      and MQL5 applied-price mapping. Supported: `SMA`, `EMA`, `WMA`, `CMA`,
+      `RSI`, `MACD`, `Momentum`, `LarryWilliams`.
+  - `signal_registry.py`:
+    - `SIGNAL_REGISTRY` — maps `OHLC`, `HeikinAshi`, and
+      `CyclicalTemporalSignal` to `MQL5SignalDescriptor` entries.
+  - `sizing_registry.py`:
+    - `SIZING_REGISTRY` — maps `None`, `FixedPositionSizer`, and
+      `RiskBasedPositionSizer` to `MQL5SizingDescriptor` entries.
+  - `code_generator.py`:
+    - `export_to_mql5(strategy, symbol, timeframe, output_path, ...)` —
+      validates, introspects, renders via Jinja2, and writes a UTF-8 BOM
+      `.mq5` file (BOM required for MetaEditor compatibility). Returns
+      `MQL5ExportResult(filepath, code, validation, indicators_exported)`.
+  - `templates/ea_main.mq5.j2` — master Jinja2 template rendering all
+    seven sections of the EA: property header, input parameters, global
+    variables, static helpers (`IsNewBar`, `NormalizeLots`, `GetAppliedPrice`,
+    `RollingStd`), signal-strength functions, `OnInit`/`OnDeinit`, `OnTick`.
+  - `templates/helpers/signal_strength.mq5.j2` — one `GetXxxStrength()`
+    function per indicator, each mirroring the Python `to_signal_strength()`
+    formula exactly.
+  - `templates/helpers/trade_logic.mq5.j2` — `CTrade`-based entry/exit logic
+    mirroring `StandardStrategy`'s threshold interpretation, with conditional
+    `allow_long` / `allow_short` blocks rendered at generation time.
+  - `templates/indicators/` — standalone reference implementations for all 9
+    indicator types (`sma`, `ema`, `wma`, `cma`, `rsi`, `macd`, `momentum`,
+    `larry_williams`, `custom_base`).
+  - `templates/signals/` — MQL5 reference implementations for `ohlc`
+    (log-return), `heikin_ashi` (stateful HA bar computation), and `temporal`
+    (cyclical sin/cos encoding of calendar features).
+  - `templates/sizing/` — standalone lot-calculation snippets for `fixed`
+    (balance × fraction / price) and `risk_based`
+    (conviction-scaled, ATR-normalised sizing).
+- `Jinja2>=3.1` added to both the `[mql5]` and `[dev]` optional extras in
+  `pyproject.toml`.
+
 ## [0.4.0] - 2026-02-20
 
 ### Added

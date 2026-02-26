@@ -1,0 +1,32 @@
+{#
+  sizing/fixed.mq5.j2  —  Standalone lot-calculation block for FixedPositionSizer.
+  -----------------------------------------------------------------------
+  Python equivalent: trade_lab.sizing.fixed.FixedPositionSizer
+
+  Python behaviour:
+    FixedPositionSizer(fraction=0.02)
+    lots = account_equity * fraction / current_price
+
+  This template is a standalone reference that mirrors the inline sizing
+  logic in ea_main.mq5.j2 (config.sizing.sizer_type == 'fixed' branch).
+  It can be included directly inside OnTick() in a custom EA.
+
+  Required MQL5 inputs (must be declared in the INPUTS section):
+    input double SizingFraction = {{ config.sizing.params.fraction }};
+    // ^ mirrors Python FixedPositionSizer(fraction=...) constructor argument
+
+  Prerequisites in the generated EA:
+    NormalizeLots()  — helper declared in SECTION 3 of ea_main.mq5.j2
+
+  Output:
+    double lots  — normalised lot size ready for trade.Buy() / trade.Sell()
+    Returns (exits OnTick) if computed lots <= 0 or ask price is invalid.
+#}
+   //--- Fixed fraction sizing ---
+   // Python: FixedPositionSizer(fraction={{ config.sizing.params.fraction }})
+   //   lots = balance * SizingFraction / ask_price
+   double ask_price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double lots = (ask_price > 0.0)
+                 ? NormalizeLots(AccountInfoDouble(ACCOUNT_BALANCE) * SizingFraction / ask_price)
+                 : 0.0;
+   if(lots <= 0.0) return;

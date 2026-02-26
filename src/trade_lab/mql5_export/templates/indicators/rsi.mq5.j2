@@ -1,0 +1,44 @@
+{#
+  indicators/rsi.mq5.j2  —  Standalone signal-strength function for RSI.
+  -----------------------------------------------------------------------
+  This template renders a complete GetXxxStrength() function for a single
+  RSI indicator. It is not included by ea_main.mq5.j2 (which delegates to
+  helpers/signal_strength.mq5.j2 for all indicator types inline); it exists
+  as a focused, self-contained reference implementation.
+
+  Signal interpretation: RSI is used as a mean-reversion indicator.
+  Readings above 70 are overbought (bearish), below 30 are oversold (bullish).
+  The tanh formula maps the 0-100 RSI scale symmetrically around 50.
+
+  Required context variables (from enriched IndicatorConfig dict):
+    ind.function_name : str    e.g. 'RSI'
+    ind.var_name      : str    e.g. 'rsi'
+    ind.input_prefix  : str    e.g. 'RSI'
+    ind.applied_price : str    e.g. 'PRICE_CLOSE'
+    ind.params        : dict   {'period': 14, 'column': 'Close'}
+    ind.weight        : float
+
+  Prerequisites in the generated EA:
+    handle_{{ ind.var_name }}  — iRSI handle, created in OnInit()
+    buf_{{ ind.var_name }}[1]  — single-bar read buffer (global)
+#}
+//------------------------------------------------------------------
+// Get{{ ind.function_name }}Strength()
+// Python: RSI({% for k, v in ind.params.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}).to_signal_strength(df)
+// Formula: tanh((50 - rsi) / 20)
+//   RSI < 30  → signal > +0.85  (oversold  = bullish)
+//   RSI = 50  → signal =  0.0   (neutral)
+//   RSI > 70  → signal < -0.85  (overbought = bearish)
+// Weight in combined formula: {{ "%.4f"|format(ind.weight) }}
+//------------------------------------------------------------------
+double Get{{ ind.function_name }}Strength()
+  {
+   if(CopyBuffer(handle_{{ ind.var_name }}, 0, 0, 1, buf_{{ ind.var_name }}) <= 0)
+     {
+      PrintFormat("Get{{ ind.function_name }}Strength: CopyBuffer failed (%d)", GetLastError());
+      return 0.0;
+     }
+   double rsi_val = buf_{{ ind.var_name }}[0];
+   // Mean-reversion interpretation: RSI below 50 is bullish, above is bearish.
+   return MathTanh((50.0 - rsi_val) / 20.0);
+  }

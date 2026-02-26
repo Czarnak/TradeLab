@@ -1,0 +1,43 @@
+{#
+  indicators/ema.mq5.j2  —  Standalone signal-strength function for EMA.
+  -----------------------------------------------------------------------
+  This template renders a complete GetXxxStrength() function for a single
+  EMA indicator. It is not included by ea_main.mq5.j2 (which delegates to
+  helpers/signal_strength.mq5.j2 for all indicator types inline); it exists
+  as a focused, self-contained reference implementation.
+
+  Required context variables (from enriched IndicatorConfig dict):
+    ind.function_name : str    e.g. 'EMA', 'EMAFast'
+    ind.var_name      : str    e.g. 'ema', 'ema_fast'
+    ind.input_prefix  : str    e.g. 'EMA', 'EMA_Fast'
+    ind.applied_price : str    e.g. 'PRICE_CLOSE'
+    ind.params        : dict   {'period': 20, 'column': 'Close'}
+    ind.weight        : float
+
+  Prerequisites in the generated EA:
+    handle_{{ ind.var_name }}  — iMA handle (MODE_EMA), created in OnInit()
+    buf_{{ ind.var_name }}[1]  — single-bar read buffer (global)
+    GetAppliedPrice()          — helper declared in SECTION 3
+    RollingStd()               — helper declared in SECTION 3
+#}
+//------------------------------------------------------------------
+// Get{{ ind.function_name }}Strength()
+// Python: EMA({% for k, v in ind.params.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}).to_signal_strength(df)
+// Formula: tanh((price - ema) / rolling_std(period))
+//   > 0  price above EMA  → bullish
+//   < 0  price below EMA  → bearish
+// Weight in combined formula: {{ "%.4f"|format(ind.weight) }}
+//------------------------------------------------------------------
+double Get{{ ind.function_name }}Strength()
+  {
+   if(CopyBuffer(handle_{{ ind.var_name }}, 0, 0, 1, buf_{{ ind.var_name }}) <= 0)
+     {
+      PrintFormat("Get{{ ind.function_name }}Strength: CopyBuffer failed (%d)", GetLastError());
+      return 0.0;
+     }
+   double ma_val  = buf_{{ ind.var_name }}[0];
+   double price   = GetAppliedPrice(0, {{ ind.applied_price }});
+   double std_val = RollingStd({{ ind.input_prefix }}_Period, 0, {{ ind.applied_price }});
+   if(std_val == 0.0) return 0.0;
+   return MathTanh((price - ma_val) / std_val);
+  }

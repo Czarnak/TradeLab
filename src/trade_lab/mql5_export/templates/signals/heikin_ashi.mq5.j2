@@ -1,0 +1,68 @@
+{#
+  signals/heikin_ashi.mq5.j2  —  MQL5 reference implementation for HeikinAshi signal.
+  -----------------------------------------------------------------------
+  Python equivalent: trade_lab.signals.signals.HeikinAshi
+
+  Python behaviour:
+    Computes Heikin-Ashi bars from OHLC, then log-normalises:
+      HA_close = (open + high + low + close) / 4
+      HA_open  = (prev_HA_open + prev_HA_close) / 2   (recursive, requires prior state)
+      HA_high  = max(high, HA_open, HA_close)
+      HA_low   = min(low,  HA_open, HA_close)
+      signal   = log(HA_close / HA_open)
+
+    A positive signal means a bullish HA bar (HA_close > HA_open).
+    A negative signal means a bearish HA bar (HA_close < HA_open).
+
+  This template is a standalone reference — the HeikinAshi signal is not
+  directly rendered in the EA output (indicators provide all signal strength).
+  Include this function in a custom EA if you want HA bar direction as input.
+
+  IMPORTANT: HA_open requires the previous bar's HA state. This implementation
+  uses static variables (s_ha_open, s_ha_close) which reset to zero on every
+  EA restart. On the first call the prior state is seeded from the bar-1 midpoint.
+  This matches the Python signal's behaviour at the start of a rolling window
+  but will produce a transient result on EA restart.
+
+  Usage in a generated EA (call from OnTick after IsNewBar guard):
+    double ha_signal = GetHeikinAshiSignal();
+    double signal_strength = MathTanh(ha_signal * 10.0);  // scale as needed
+#}
+//------------------------------------------------------------------
+// GetHeikinAshiSignal()
+// Python: HeikinAshi().to_signal_strength(df)
+// Formula: log(HA_close / HA_open)  for the most recently completed bar (shift=1)
+//   > 0  bullish Heikin-Ashi bar  (HA close above HA open)
+//   < 0  bearish Heikin-Ashi bar  (HA close below HA open)
+//   = 0  indecision / doji bar
+//
+// State: s_ha_open and s_ha_close persist across ticks (static variables).
+//        They reset on EA restart — expect one transient bar on first call.
+//------------------------------------------------------------------
+double GetHeikinAshiSignal()
+  {
+   static double s_ha_open  = 0.0;
+   static double s_ha_close = 0.0;
+
+   // Read the most recently completed bar (shift = 1).
+   double o = iOpen (_Symbol, PERIOD_CURRENT, 1);
+   double h = iHigh (_Symbol, PERIOD_CURRENT, 1);
+   double l = iLow  (_Symbol, PERIOD_CURRENT, 1);
+   double c = iClose(_Symbol, PERIOD_CURRENT, 1);
+
+   // HA_close = average of the four OHLC prices.
+   double ha_close = (o + h + l + c) / 4.0;
+
+   // HA_open = midpoint of the prior HA bar.
+   // On first call (s_ha_open == 0), seed from the prior real bar's midpoint.
+   double ha_open  = (s_ha_open == 0.0)
+                     ? (o + c) / 2.0                    // first-bar seed
+                     : (s_ha_open + s_ha_close) / 2.0;  // recursive HA formula
+
+   // Persist state for the next bar.
+   s_ha_open  = ha_open;
+   s_ha_close = ha_close;
+
+   if(ha_open <= 0.0) return 0.0;
+   return MathLog(ha_close / ha_open);
+  }

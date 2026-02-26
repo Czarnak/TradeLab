@@ -12,7 +12,8 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
 - `position sizing`,
 - `backtesting` (execution simulation, metrics, report generation),
 - `monte_carlo` (synthetic data generation and robustness analysis),
-- `optimization` (Optuna-based parameter and weight search).
+- `optimization` (Optuna-based parameter and weight search),
+- `mql5_export` (generate MetaTrader 5 Expert Advisors from `StandardStrategy`).
 
 ## Features
 
@@ -45,6 +46,10 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
   - indicator inclusion/period/lag search,
   - Keras model training inside Optuna trials,
   - optional post-search model pruning.
+- MQL5 Expert Advisor export:
+  - generates `.mq5` code from `StandardStrategy`,
+  - validates export compatibility before generation,
+  - supports signals, sizing rules, and indicator templates.
 
 ## Installation
 
@@ -68,6 +73,12 @@ For ML optimization workflows (TensorFlow/Keras + sklearn + Optuna integration):
 
 ```bash
 pip install -e ".[ml]"
+```
+
+For MQL5 export workflows (Jinja2 templates for `.mq5` generation):
+
+```bash
+pip install -e ".[mql5]"
 ```
 
 ## Quick Start
@@ -138,7 +149,7 @@ data_engine = BacktestEngine(ticker='SPY', start='2015-01-01', end='2024-01-01')
 full_df = data_engine.fetch_data()
 
 
-# Split data: train on 2015–2021, validate on 2022–2024
+# Split data: train on 2015-2021, validate on 2022-2024
 train_df = full_df[:'2021-12-31']
 val_df   = full_df['2022-01-01':]
 
@@ -181,7 +192,7 @@ print(result.trials_df.sort_values('value', ascending=False).head(10))
 The **strategy factory** pattern keeps the optimizer decoupled from strategy
 internals. The optimizer samples numbers; the factory decides what they mean.
 This means the same optimizer can tune indicator parameters, weights, thresholds,
-position sizing fractions — anything your factory maps from the params dict.
+position sizing fractions - anything your factory maps from the params dict.
 
 The **validation DataFrame** is never shown to the optimizer during search. It
 is evaluated once after the search completes using only `best_params`. This
@@ -237,7 +248,7 @@ print(f"Max drawdown 90% CI: [{low:.2%}, {high:.2%}]")
 
 The `BlockBootstrap` and `CircularBlockBootstrap` generators are recommended
 as the primary robustness tools. They preserve short-range autocorrelation and
-volatility clustering — the temporal structure that trend-following and
+volatility clustering - the temporal structure that trend-following and
 mean-reversion strategies actually exploit. Shuffling destroys this structure;
 GBM replaces it with an idealized model.
 
@@ -246,10 +257,10 @@ GBM replaces it with an idealized model.
 The `percentile_of(metric, value)` method is the most useful single-number
 check. For metrics where higher is better (e.g. Sharpe ratio):
 
-- **Below 50th percentile** — the strategy underperforms the average synthetic path.
-- **50–75th percentile** — moderate edge, may be partially path-dependent.
-- **75–95th percentile** — strategy is robust across most synthetic paths.
-- **Above 95th percentile** — investigate: strong edge or potential overfitting.
+- **Below 50th percentile** - the strategy underperforms the average synthetic path.
+- **50-75th percentile** - moderate edge, may be partially path-dependent.
+- **75-95th percentile** - strategy is robust across most synthetic paths.
+- **Above 95th percentile** - investigate: strong edge or potential overfitting.
 
 For metrics where lower is better (e.g. `max_drawdown`), invert the interpretation.
 
@@ -300,6 +311,46 @@ pruned_result, report = pruner.prune_result(ml_result)
 print(report["zero_fraction"], report["dead_features"])
 ```
 
+## MQL5 Export
+
+Use `trade_lab.mql5_export` to export a `StandardStrategy` into a MetaTrader 5
+Expert Advisor (`.mq5`) source file.
+
+Supported components:
+
+- Indicators: `SMA`, `EMA`, `WMA`, `CMA`, `RSI`, `MACD`, `Momentum`, `LarryWilliams`
+- Upstream signals: `OHLC`, `HeikinAshi`, `CyclicalTemporalSignal`
+- Position sizing: `None`, `FixedPositionSizer`, `RiskBasedPositionSizer`
+
+```python
+from trade_lab.indicators import EMA, RSI
+from trade_lab.strategies import StandardStrategy
+from trade_lab.mql5_export import export_to_mql5
+
+strategy = StandardStrategy(
+    indicators=[
+        (EMA(period=20), 1.0),
+        (EMA(period=50), -1.0),
+        (RSI(period=14), 0.5),
+    ],
+    entry_threshold=0.3,
+    exit_threshold=0.1,
+    allow_long=True,
+    allow_short=True,
+)
+
+result = export_to_mql5(
+    strategy,
+    symbol="EURUSD",
+    timeframe="PERIOD_H1",
+    output_path="outputs/TradeLab_EA.mq5",
+    magic_number=123456,
+)
+
+print(result.filepath)
+print(result.indicators_exported)
+print(result.validation.warnings)
+```
 ## Core Concepts
 
 ### Signals
@@ -355,6 +406,15 @@ src/trade_lab/
     optimizer.py
     pruning.py
     result.py
+  mql5_export/
+    __init__.py
+    code_generator.py
+    introspector.py
+    validators.py
+    indicator_registry.py
+    signal_registry.py
+    sizing_registry.py
+    templates/
   monte_carlo/
     __init__.py
     generators.py
@@ -412,6 +472,13 @@ Core modules:
 - [`src/trade_lab/ml_optimization/optimizer.py`][api-mlopt-optimizer]
 - [`src/trade_lab/ml_optimization/pruning.py`][api-mlopt-pruning]
 - [`src/trade_lab/ml_optimization/result.py`][api-mlopt-result]
+- [`src/trade_lab/mql5_export/__init__.py`][api-mql5-init]
+- [`src/trade_lab/mql5_export/code_generator.py`][api-mql5-codegen]
+- [`src/trade_lab/mql5_export/introspector.py`][api-mql5-introspector]
+- [`src/trade_lab/mql5_export/validators.py`][api-mql5-validators]
+- [`src/trade_lab/mql5_export/indicator_registry.py`][api-mql5-indicator-reg]
+- [`src/trade_lab/mql5_export/signal_registry.py`][api-mql5-signal-reg]
+- [`src/trade_lab/mql5_export/sizing_registry.py`][api-mql5-sizing-reg]
 
 Examples:
 
@@ -491,8 +558,14 @@ MIT
 [api-mlopt-optimizer]: src/trade_lab/ml_optimization/optimizer.py
 [api-mlopt-pruning]: src/trade_lab/ml_optimization/pruning.py
 [api-mlopt-result]: src/trade_lab/ml_optimization/result.py
+[api-mql5-init]: src/trade_lab/mql5_export/__init__.py
+[api-mql5-codegen]: src/trade_lab/mql5_export/code_generator.py
+[api-mql5-introspector]: src/trade_lab/mql5_export/introspector.py
+[api-mql5-validators]: src/trade_lab/mql5_export/validators.py
+[api-mql5-indicator-reg]: src/trade_lab/mql5_export/indicator_registry.py
+[api-mql5-signal-reg]: src/trade_lab/mql5_export/signal_registry.py
+[api-mql5-sizing-reg]: src/trade_lab/mql5_export/sizing_registry.py
 [example-ema]: examples/simple_ema_strategy.py
 [example-opt-standard]: examples/standard_optimization_example.ipynb
 [example-opt-ml]: examples/ml_optimization_example.ipynb
 [example-mc]: examples/monte_carlo_example.ipynb
-

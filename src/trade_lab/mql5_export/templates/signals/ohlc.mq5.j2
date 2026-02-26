@@ -1,0 +1,40 @@
+{#
+  signals/ohlc.mq5.j2  —  MQL5 reference implementation for the OHLC signal.
+  -----------------------------------------------------------------------
+  Python equivalent: trade_lab.signals.signals.OHLC
+
+  Python behaviour:
+    OHLC computes log-returns of the selected OHLCV column:
+      df[column].apply(lambda x: np.log(x / x.shift(1)))
+
+  This template is a standalone reference — the OHLC signal is not directly
+  rendered in the EA output (indicators provide all signal strength). Include
+  this function in a custom EA if you want raw log-returns as a signal input.
+
+  Design note: log-returns are roughly normally distributed for liquid
+  instruments. A single-bar return of 0 means no change; positive means the
+  price rose; negative means it fell. Use MathTanh() to squash to [-1, 1]
+  if you combine with other indicator signals.
+
+  Usage in a generated EA (call from OnTick after IsNewBar guard):
+    double lr = GetOHLCLogReturn(PRICE_CLOSE);
+    double signal_strength = MathTanh(lr * 100.0);  // scale for tanh sensitivity
+#}
+//------------------------------------------------------------------
+// GetOHLCLogReturn(applied_price)
+// Python: OHLC(column='Close').to_signal_strength(df)
+// Formula: log(price[0] / price[1])  (log-return of most recent completed bar)
+//   > 0  bar closed higher than previous bar
+//   < 0  bar closed lower  than previous bar
+//   = 0  no change (or insufficient data)
+//
+// Note: raw log-return is typically very small (e.g. 0.001 = 0.1% move).
+//       Wrap with MathTanh(lr * scale) to map to [-1, 1] as needed.
+//------------------------------------------------------------------
+double GetOHLCLogReturn(ENUM_APPLIED_PRICE applied_price)
+  {
+   double p_now  = GetAppliedPrice(0, applied_price);
+   double p_prev = GetAppliedPrice(1, applied_price);
+   if(p_prev <= 0.0) return 0.0;
+   return MathLog(p_now / p_prev);
+  }

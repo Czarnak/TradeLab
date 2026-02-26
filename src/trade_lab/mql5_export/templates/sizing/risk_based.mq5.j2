@@ -1,0 +1,53 @@
+{#
+  sizing/risk_based.mq5.j2  —  Standalone lot-calculation block for RiskBasedPositionSizer.
+  -----------------------------------------------------------------------
+  Python equivalent: trade_lab.sizing.risk_based.RiskBasedPositionSizer
+
+  Python behaviour:
+    RiskBasedPositionSizer(max_fraction=0.02, risk_multiplier=2.0)
+    risk_capital = balance * max_fraction * |signal_strength|
+    lots = risk_capital / (volatility * risk_multiplier)
+    where volatility = ATR(14) as a proxy for 1-bar price volatility
+
+  This template is a standalone reference that mirrors the inline sizing
+  logic in ea_main.mq5.j2 (config.sizing.sizer_type == 'risk_based' branch).
+  It can be included directly inside OnTick() in a custom EA.
+
+  Required MQL5 inputs (must be declared in the INPUTS section):
+    input double MaxFraction    = {{ config.sizing.params.max_fraction }};
+    input double RiskMultiplier = {{ config.sizing.params.risk_multiplier }};
+    input int    ATR_Period     = 14;
+
+  Required global variables (declared in SECTION 2 of ea_main.mq5.j2):
+    int    handle_atr;        // iATR handle, created in OnInit()
+    double buf_atr[1];        // single-bar read buffer
+
+  Available in OnTick() scope at the point of inclusion:
+    signal_strength : double  (combined signal, already computed above)
+
+  Prerequisites in the generated EA:
+    NormalizeLots()  — helper declared in SECTION 3 of ea_main.mq5.j2
+
+  Output:
+    double lots  — normalised lot size ready for trade.Buy() / trade.Sell()
+    Returns (exits OnTick) if ATR is invalid or computed lots <= 0.
+
+  Sizing rationale:
+    - Position scales with |signal_strength| — higher conviction → larger size.
+    - Position scales inversely with ATR volatility — higher volatility → smaller size.
+    - MaxFraction caps the position at a fraction of balance even at max conviction.
+#}
+   //--- Risk-based sizing ---
+   // Python: RiskBasedPositionSizer(max_fraction={{ config.sizing.params.max_fraction }},
+   //                                risk_multiplier={{ config.sizing.params.risk_multiplier }})
+   //   risk_capital = balance * MaxFraction * |signal_strength|
+   //   lots         = risk_capital / (ATR * RiskMultiplier)
+   double balance      = AccountInfoDouble(ACCOUNT_BALANCE);
+   double risk_capital = balance * MaxFraction * MathAbs(signal_strength);
+   double atr_val      = 0.0;
+   if(CopyBuffer(handle_atr, 0, 0, 1, buf_atr) > 0)
+      atr_val = buf_atr[0];
+   double lots = (atr_val > 0.0)
+                 ? NormalizeLots(risk_capital / (atr_val * RiskMultiplier))
+                 : 0.0;
+   if(lots <= 0.0) return;

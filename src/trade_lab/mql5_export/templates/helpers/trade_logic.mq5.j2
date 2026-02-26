@@ -1,0 +1,90 @@
+{#
+  helpers/trade_logic.mq5.j2
+  -----------------------------------------------------------------------
+  Entry / exit logic mirroring StandardStrategy's signal_strength
+  interpretation. Included inside OnTick() after signal_strength and lots
+  have been computed.
+
+  Available variables (from parent OnTick context):
+    signal_strength  : double  (combined, tanh-squashed)
+    lots             : double  (normalised lot size)
+    config           : StrategyConfig  (.allow_long, .allow_short)
+    EntryThreshold   : double  (MQL5 input)
+    ExitThreshold    : double  (MQL5 input)
+    MagicNumber      : int     (MQL5 input)
+#}
+   //--- Detect current position (filter by magic number) ---
+   bool has_long  = false;
+   bool has_short = false;
+   if(PositionSelect(_Symbol))
+     {
+      if((long)PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+        {
+         has_long  = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+         has_short = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL);
+        }
+     }
+
+   //--- Manage existing long position ---
+{% if config.allow_long %}
+   if(has_long)
+     {
+      // Python: |signal_strength| < exit_threshold → close (neutral zone)
+      bool exit_neutral = (signal_strength < ExitThreshold);
+{% if config.allow_short %}
+      // Python: signal_strength < -entry_threshold → close long and open short
+      bool exit_for_short = (signal_strength < -EntryThreshold);
+{% else %}
+      bool exit_for_short = false;   // allow_short=False: never reverse
+{% endif %}
+      if(exit_neutral || exit_for_short)
+         trade.PositionClose(_Symbol);
+     }
+{% endif %}
+
+   //--- Manage existing short position ---
+{% if config.allow_short %}
+   if(has_short)
+     {
+      // Python: |signal_strength| < exit_threshold → close (neutral zone)
+      bool exit_neutral = (signal_strength > -ExitThreshold);
+{% if config.allow_long %}
+      // Python: signal_strength > entry_threshold → close short and open long
+      bool exit_for_long = (signal_strength > EntryThreshold);
+{% else %}
+      bool exit_for_long = false;   // allow_long=False: never reverse
+{% endif %}
+      if(exit_neutral || exit_for_long)
+         trade.PositionClose(_Symbol);
+     }
+{% endif %}
+
+   //--- Re-check position state after potential close ---
+   has_long  = false;
+   has_short = false;
+   if(PositionSelect(_Symbol))
+     {
+      if((long)PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+        {
+         has_long  = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+         has_short = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL);
+        }
+     }
+
+   //--- Open new position if flat ---
+{% if config.allow_long %}
+   // Python: signal_strength > entry_threshold → buy
+   if(!has_long && !has_short && signal_strength > EntryThreshold)
+     {
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      trade.Buy(lots, _Symbol, ask, 0, 0, "TradeLab");
+     }
+{% endif %}
+{% if config.allow_short %}
+   // Python: signal_strength < -entry_threshold → sell
+   if(!has_long && !has_short && signal_strength < -EntryThreshold)
+     {
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      trade.Sell(lots, _Symbol, bid, 0, 0, "TradeLab");
+     }
+{% endif %}

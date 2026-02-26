@@ -1,0 +1,50 @@
+{#
+  indicators/custom_base.mq5.j2  —  Base pattern for custom (non-handle) indicators.
+  -----------------------------------------------------------------------
+  This template documents the structural pattern used by TradeLab indicators
+  that do NOT use a builtin MQL5 indicator handle:
+    - CMA       (indicators/cma.mq5.j2)
+    - Momentum  (indicators/momentum.mq5.j2)
+    - LarryWilliams (indicators/larry_williams.mq5.j2)
+
+  These indicators compute their values by reading raw price series directly
+  via GetAppliedPrice(), without creating a handle in OnInit() or releasing
+  one in OnDeinit().
+
+  If you extend TradeLab with a new custom indicator, follow this pattern:
+
+  Required context variables (from enriched IndicatorConfig dict):
+    ind.function_name : str    e.g. 'MyCustom'
+    ind.input_prefix  : str    e.g. 'MyCustom'
+    ind.applied_price : str    e.g. 'PRICE_CLOSE'
+    ind.params        : dict   your indicator's constructor arguments
+    ind.weight        : float
+
+  Registry requirements (indicator_registry.py):
+    uses_builtin_handle = False
+    builtin_function    = None
+    ma_method           = None
+    n_buffers           = 0
+
+  Introspector requirements (introspector.py):
+    Add the new class to _collect_indicators() isinstance checks.
+    Populate ind.params with the relevant constructor parameters.
+#}
+//------------------------------------------------------------------
+// GetCustomStrength() — structural pattern for handle-free indicators.
+// Copy this block and replace the placeholder logic with your formula.
+//------------------------------------------------------------------
+double GetCustomStrength()
+  {
+   // All data read directly from price series — no CopyBuffer() needed.
+   // Use GetAppliedPrice(shift, applied_price) to access OHLC values.
+   // Use RollingStd(period, shift, applied_price) for rolling std deviation.
+   //
+   // Example (simple log-return):
+   //   double p0 = GetAppliedPrice(0, PRICE_CLOSE);
+   //   double p1 = GetAppliedPrice(1, PRICE_CLOSE);
+   //   if(p1 <= 0.0) return 0.0;
+   //   return MathTanh(MathLog(p0 / p1) * 100.0);
+
+   return 0.0;  // Replace with actual implementation.
+  }

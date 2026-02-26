@@ -1,0 +1,68 @@
+{#
+  indicators/larry_williams.mq5.j2  —  Standalone signal-strength function for LarryWilliams.
+  -----------------------------------------------------------------------
+  This template renders a complete GetXxxStrength() function for a single
+  LarryWilliams indicator. It is not included by ea_main.mq5.j2 (which
+  delegates to helpers/signal_strength.mq5.j2 inline); it exists as a
+  focused, self-contained reference implementation.
+
+  LarryWilliams uses no builtin MQL5 indicator handle — it approximates
+  pandas EWM (Exponential Weighted Mean) with a finite lookback window.
+
+  Python EWM model: ewm(span=period, adjust=False)
+    alpha = 1 / span
+    EWM_mean[t] = alpha * x[t] + (1 - alpha) * EWM_mean[t-1]
+
+  MQL5 approximation: finite window of 5*period bars.
+    Weight at distance 5*period from current bar: (1-alpha)^(5*period) ≈ e^(-5) < 1%
+    Older bars contribute negligibly — truncating the window is safe.
+
+  EWM variance computed via running second moment:
+    Var = E[x^2] - E[x]^2   (population estimate from exponentially-weighted moments)
+
+  Signal: sign(ewm_mean / ewm_std)  — purely directional.
+
+  Required context variables (from enriched IndicatorConfig dict):
+    ind.function_name : str    e.g. 'LarryWilliams'
+    ind.input_prefix  : str    e.g. 'Larry_Williams'
+    ind.applied_price : str    e.g. 'PRICE_CLOSE'
+    ind.params        : dict   {'period': 14, 'column': 'Close'}
+    ind.weight        : float
+
+  Prerequisites in the generated EA:
+    GetAppliedPrice()  — helper declared in SECTION 3
+#}
+//------------------------------------------------------------------
+// Get{{ ind.function_name }}Strength()
+// Python: LarryWilliams({% for k, v in ind.params.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}).to_signal_strength(df)
+// Formula: sign(ewm_mean / ewm_std)  where ewm uses span={{ ind.params.period if 'period' in ind.params else 'period' }}
+//   Approximated with a finite window of 5*period bars.
+//   EWM weights decay exponentially: weight at 5*period ≈ e^(-5) < 1%.
+// Weight in combined formula: {{ "%.4f"|format(ind.weight) }}
+//------------------------------------------------------------------
+double Get{{ ind.function_name }}Strength()
+  {
+   int    period   = {{ ind.input_prefix }}_Period;
+   double alpha    = 1.0 / period;       // alpha = 1/span, matches pandas ewm(span=period)
+   int    lookback = MathMin(period * 5, iBars(_Symbol, PERIOD_CURRENT) - 1);
+   if(lookback < 2) return 0.0;
+
+   // Seed EWM with the oldest bar in the window, then sweep forward to bar 0.
+   double ema_mean = GetAppliedPrice(lookback, {{ ind.applied_price }});
+   double ema_sq   = ema_mean * ema_mean;
+   for(int i = lookback - 1; i >= 0; i--)
+     {
+      double p = GetAppliedPrice(i, {{ ind.applied_price }});
+      ema_mean = alpha * p + (1.0 - alpha) * ema_mean;
+      ema_sq   = alpha * p * p + (1.0 - alpha) * ema_sq;
+     }
+
+   // Population variance from first two EWM moments: Var = E[x^2] - E[x]^2
+   double variance = ema_sq - ema_mean * ema_mean;
+   if(variance <= 0.0) return 0.0;
+   double ema_std = MathSqrt(variance);
+   if(ema_std == 0.0) return 0.0;
+
+   double lw = ema_mean / ema_std;
+   return lw > 0.0 ? 1.0 : lw < 0.0 ? -1.0 : 0.0;
+  }

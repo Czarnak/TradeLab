@@ -97,6 +97,21 @@ def test_ohlc_signal_compute_and_plot_and_columns():
 
 
 def test_heikin_ashi_signal_compute_and_plot_and_columns():
+    import plotly.graph_objects as go
+
+    if not hasattr(go, "Candlestick"):
+        class _DummyCandlestick:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        _figure_cls = go.Figure
+
+        def _figure_factory(*args, **kwargs):
+            return _figure_cls()
+
+        go.Candlestick = _DummyCandlestick
+        go.Figure = _figure_factory
+
     df = _sample_ohlcv()
     signal = HeikinAshi()
 
@@ -105,7 +120,7 @@ def test_heikin_ashi_signal_compute_and_plot_and_columns():
 
     for col in signal.output_columns:
         assert col in out.columns
-    assert np.isnan(out["signal__ha_log_return_close"].iloc[0])
+    assert np.isnan(out["signal__ha_close"].iloc[0])
 
 
 def test_sma_ema_and_rsi_compute_signal_strength_plot_and_output_columns():
@@ -154,3 +169,4 @@ def test_risk_based_position_sizer_validation_and_compute_size():
     assert sizer.compute_size(0.5, equity=1000, price=10, volatility=None) == 0.0
     assert sizer.compute_size(0.5, equity=1000, price=10, volatility=0) == 0.0
     assert sizer.compute_size(-0.5, equity=1000, price=10, volatility=5.0) == 5.0
+

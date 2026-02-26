@@ -1,0 +1,49 @@
+{#
+  indicators/macd.mq5.j2  —  Standalone signal-strength function for MACD.
+  -----------------------------------------------------------------------
+  This template renders a complete GetXxxStrength() function for a single
+  MACD indicator. It is not included by ea_main.mq5.j2 (which delegates to
+  helpers/signal_strength.mq5.j2 for all indicator types inline); it exists
+  as a focused, self-contained reference implementation.
+
+  Signal interpretation: returns the raw MACD signal line value (no tanh
+  normalisation). This means the output is NOT bounded to [-1, 1] and its
+  magnitude depends on the price scale. Use with a small weight, or scale
+  the Weight input in the EA to compensate.
+
+  iMACD buffer layout:
+    Buffer 0 = MACD line (fast_ema - slow_ema)
+    Buffer 1 = Signal line (9-period EMA of MACD line)
+
+  Required context variables (from enriched IndicatorConfig dict):
+    ind.function_name : str    e.g. 'MACD'
+    ind.var_name      : str    e.g. 'macd'
+    ind.input_prefix  : str    e.g. 'MACD'
+    ind.params        : dict   {'fast_period': 12, 'slow_period': 26, 'column': 'Close'}
+    ind.weight        : float
+
+  Prerequisites in the generated EA:
+    handle_{{ ind.var_name }}  — iMACD handle, created in OnInit()
+#}
+//------------------------------------------------------------------
+// Get{{ ind.function_name }}Strength()
+// Python: MACD({% for k, v in ind.params.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}).to_signal_strength(df)
+// Returns: raw MACD signal line value (no tanh normalisation).
+//   Python: df['macd_signal'].fillna(0)
+// WARNING: output is unbounded (not in [-1, 1]) — magnitude depends on price scale.
+//          Use a small Weight input, or normalise downstream.
+// Buffer 0 = MACD line (fast_ema - slow_ema)
+// Buffer 1 = Signal line (9-period EMA of MACD line)
+// Weight in combined formula: {{ "%.4f"|format(ind.weight) }}
+//------------------------------------------------------------------
+double Get{{ ind.function_name }}Strength()
+  {
+   double buf_macd_signal[1];
+   // Read buffer 1 = signal line (9-period EMA of the MACD line).
+   if(CopyBuffer(handle_{{ ind.var_name }}, 1, 0, 1, buf_macd_signal) <= 0)
+     {
+      PrintFormat("Get{{ ind.function_name }}Strength: CopyBuffer failed (%d)", GetLastError());
+      return 0.0;
+     }
+   return buf_macd_signal[0];
+  }

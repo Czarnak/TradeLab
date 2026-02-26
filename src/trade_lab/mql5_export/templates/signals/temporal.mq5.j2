@@ -1,0 +1,63 @@
+{#
+  signals/temporal.mq5.j2  —  MQL5 reference implementation for CyclicalTemporalSignal.
+  -----------------------------------------------------------------------
+  Python equivalent: trade_lab.signals.temporal.CyclicalTemporalSignal
+
+  Python behaviour:
+    CyclicalTemporalSignal(component, period) encodes a calendar feature as
+    a pair of cyclical (sin/cos) values that respect wrap-around at period:
+      angle   = 2 * pi * component_value / period
+      sin_val = sin(angle)
+      cos_val = cos(angle)
+
+    Supported components and their natural periods:
+      component        MQL5 field        natural period
+      --------         ----------        --------------
+      'hour'           dt.hour           24
+      'day_of_week'    dt.day_of_week    7
+      'day_of_month'   dt.day            31
+      'month'          dt.mon            12
+
+  This template is a standalone reference — temporal signals are not directly
+  rendered in the EA output (indicators provide all signal strength). Include
+  these functions in a custom EA if you want cyclical time features as inputs.
+
+  Usage in a generated EA (call from OnTick after IsNewBar guard):
+    double sin_h, cos_h;
+    int hour_val = GetTemporalComponent("hour");
+    GetTemporalSinCos(sin_h, cos_h, hour_val, 24);
+    // Use sin_h or cos_h as a signal component (already in [-1, 1]).
+#}
+//------------------------------------------------------------------
+// GetTemporalSinCos(sin_val, cos_val, component_value, period)
+// Python: CyclicalTemporalSignal(component, period)
+// Formula: angle = 2*pi * component_value / period
+//          sin_val = sin(angle),  cos_val = cos(angle)
+// Both outputs are in [-1, 1] — no further normalisation needed.
+//------------------------------------------------------------------
+void GetTemporalSinCos(double &sin_val, double &cos_val,
+                       int component_value, int period)
+  {
+   if(period <= 0) { sin_val = 0.0; cos_val = 1.0; return; }
+   double angle = 2.0 * M_PI * component_value / period;
+   sin_val = MathSin(angle);
+   cos_val = MathCos(angle);
+  }
+
+//------------------------------------------------------------------
+// GetTemporalComponent(component)
+// Extract an integer calendar component from the most recently completed bar.
+// Returns the raw integer value — pass to GetTemporalSinCos() with the
+// matching period to obtain cyclical encodings.
+//------------------------------------------------------------------
+int GetTemporalComponent(string component)
+  {
+   MqlDateTime dt;
+   TimeToStruct(iTime(_Symbol, PERIOD_CURRENT, 1), dt);
+   if(component == "hour")         return dt.hour;         // 0-23,  period=24
+   if(component == "day_of_week")  return dt.day_of_week;  // 0-6,   period=7
+   if(component == "day_of_month") return dt.day;          // 1-31,  period=31
+   if(component == "month")        return dt.mon;          // 1-12,  period=12
+   // day_of_year: MqlDateTime has no direct field — approximate via month.
+   return dt.mon;
+  }
