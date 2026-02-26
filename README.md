@@ -351,6 +351,7 @@ print(result.filepath)
 print(result.indicators_exported)
 print(result.validation.warnings)
 ```
+
 ## Core Concepts
 
 ### Signals
@@ -486,15 +487,16 @@ Examples:
 - [`examples/standard_optimization_example.ipynb`][example-opt-standard]
 - [`examples/ml_optimization_example.ipynb`][example-opt-ml]
 - [`examples/monte_carlo_example.ipynb`][example-mc]
+- [`examples/generating_ea.ipynb`][example-ea]
 
 ## Roadmap
 
 - Stabilize and document public APIs for strategy, signal, and indicator extension.
 - Add more built-in strategy templates (trend-following and mean-reversion variants).
-- Expand test coverage for backtest edge cases (missing data, sparse trades, no-trade windows).
 - Extend ML optimisation with richer model families and time-series validation schemes.
 - Improve reporting with richer trade analytics and export formats.
-- Prepare packaging and release automation for PyPI distribution.
+- Add ML Strategies code generation.
+- Prepare packaging and release automation for PyPI distribution (maybe).
 
 ## Testing
 
@@ -569,3 +571,4 @@ MIT
 [example-opt-standard]: examples/standard_optimization_example.ipynb
 [example-opt-ml]: examples/ml_optimization_example.ipynb
 [example-mc]: examples/monte_carlo_example.ipynb
+[example-ea]: examples/generating_ea.ipynb

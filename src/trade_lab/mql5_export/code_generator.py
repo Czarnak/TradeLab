@@ -139,7 +139,7 @@ def export_to_mql5(
     strategy: object,
     symbol: str = "EURUSD",
     timeframe: str = "PERIOD_H1",
-    output_path: str = "TradeLab_EA.mq5",
+    output_path: str = "outputs\\TradeLab_EA.mq5",
     magic_number: int = 123456,
     max_spread: int = 20,
     ea_name: str = "TradeLab Expert Advisor",
