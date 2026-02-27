@@ -29,7 +29,9 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
   - fixed-fraction sizing,
   - risk-based sizing with volatility input.
 - Built-in indicators/signals:
-  - `SMA`, `EMA`, `RSI`,
+  - moving averages: `SMA`, `EMA`, `WMA`, `CMA`, `DEMA`, `TEMA`,
+  - oscillators: `RSI`, `MACD`, `Momentum`, `LarryWilliams`, `BollingerBands`, `CCI`, `Stochastic`, `ROC`, `TRIX`, `DPO`, `RVI`, `DeMarker`,
+  - volume/trend: `OBV`, `ForceIndex`, `CHO`, `ADX`, `ATR`, `MassIndex`,
   - `OHLC`, `HeikinAshi`, `CyclicalTemporalSignal`.
 - Performance metrics and HTML backtest report generation.
 - Monte Carlo robustness testing:
@@ -325,6 +327,11 @@ Supported components:
 - Upstream signals: `OHLC`, `HeikinAshi`, `CyclicalTemporalSignal`
 - Position sizing: `None`, `FixedPositionSizer`, `RiskBasedPositionSizer`
 
+Indicator registry coverage (`indicator_registry.py`) additionally includes
+descriptors for: `DEMA`, `TEMA`, `BollingerBands`, `CCI`, `Stochastic`, `ROC`,
+`TRIX`, `DPO`, `RVI`, `DeMarker`, `OBV`, `ForceIndex`, `CHO`, `ADX`, `ATR`,
+`MassIndex`.
+
 ```python
 from trade_lab.indicators import EMA, RSI
 from trade_lab.strategies import StandardStrategy
@@ -459,6 +466,8 @@ src/trade_lab/
     base.py
     moving_averages.py
     oscillators.py
+    trend.py
+    volume.py
   ml/
     __init__.py
     models.py
@@ -523,6 +532,8 @@ Core modules:
 - [`src/trade_lab/indicators/base.py`][api-indicator-base]
 - [`src/trade_lab/indicators/moving_averages.py`][api-indicator-ma]
 - [`src/trade_lab/indicators/oscillators.py`][api-indicator-osc]
+- [`src/trade_lab/indicators/trend.py`][api-indicator-trend]
+- [`src/trade_lab/indicators/volume.py`][api-indicator-volume]
 - [`src/trade_lab/signals/base.py`][api-signal-base]
 - [`src/trade_lab/signals/signals.py`][api-signal-signals]
 - [`src/trade_lab/signals/temporal.py`][api-signal-temporal]
@@ -612,6 +623,8 @@ MIT
 [api-indicator-base]: src/trade_lab/indicators/base.py
 [api-indicator-ma]: src/trade_lab/indicators/moving_averages.py
 [api-indicator-osc]: src/trade_lab/indicators/oscillators.py
+[api-indicator-trend]: src/trade_lab/indicators/trend.py
+[api-indicator-volume]: src/trade_lab/indicators/volume.py
 [api-signal-base]: src/trade_lab/signals/base.py
 [api-signal-signals]: src/trade_lab/signals/signals.py
 [api-signal-temporal]: src/trade_lab/signals/temporal.py

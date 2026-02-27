@@ -8,6 +8,16 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
+- Indicator library expansion:
+  - `moving_averages.py`: `DEMA`, `TEMA`.
+  - `oscillators.py`: `BollingerBands`, `CCI`, `Stochastic`, `ROC`, `TRIX`,
+    `DPO`, `RVI`, `DeMarker`.
+  - New modules:
+    - `trend.py`: `ADX`, `ATR`, `MassIndex`.
+    - `volume.py`: `OBV`, `ForceIndex`, `CHO`.
+  - `trade_lab.indicators.__init__` now exports these classes in `__all__`.
+- `mql5_export/indicator_registry.py` expanded with descriptors for the new
+  moving-average, oscillator, trend/volatility, and volume indicators.
 - `mql5_export` module extended with ML strategy export support.
   Export an `MLStrategy` with a trained `KerasModelWrapper` to a complete,
   ready-to-compile MetaTrader 5 Expert Advisor (`.mq5` file) with hardcoded

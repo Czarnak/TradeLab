@@ -201,3 +201,99 @@ class CMA(BaseMA):
     @property
     def _raw_output_columns(self) -> list[str]:
         return [f'indicator__cma_{self.period}']
+    
+
+class DEMA(BaseMA):
+    """Double Exponential Moving Average indicator.
+
+    Reduces the lag of a standard EMA by applying a correction term:
+
+        DEMA = 2 * EMA(period) - EMA(EMA(period))
+
+    The second EMA term is subtracted to cancel out the delay introduced by
+    single smoothing, resulting in a moving average that tracks price changes
+    faster than EMA for the same period.
+
+    Signal strength: same as all MA indicators — normalised distance between
+    price and DEMA, squashed to [-1, 1] via tanh.
+
+    Parameters
+    ----------
+    *signals : BaseSignal
+        Upstream signals.
+    column : str
+        OHLCV column to compute DEMA on.
+    period : int
+        EMA lookback window applied at both smoothing stages.
+    lag : int
+        Bars to shift output backward. See ``BaseIndicator`` for details.
+    """
+
+    def __init__(
+        self,
+        *signals: BaseSignal,
+        column: str = 'Close',
+        period: int = 20,
+        lag: int = 0,
+    ) -> None:
+        super().__init__(*signals, column=column, period=period, lag=lag)
+        self.plot_title = f'DEMA({self.period})'
+
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = self.get_data(df)
+        ema = df[self.column].ewm(span=self.period, adjust=False).mean()
+        ema_of_ema = ema.ewm(span=self.period, adjust=False).mean()
+        df[self._raw_output_columns[0]] = 2.0 * ema - ema_of_ema
+        return df
+
+    @property
+    def _raw_output_columns(self) -> list[str]:
+        return [f'indicator__dema_{self.period}']
+
+
+class TEMA(BaseMA):
+    """Triple Exponential Moving Average indicator.
+
+    Further reduces EMA lag by applying a third smoothing correction:
+
+        TEMA = 3 * EMA(period) - 3 * EMA(EMA(period)) + EMA(EMA(EMA(period)))
+
+    This makes TEMA the most responsive of the EMA family, at the cost of
+    increased sensitivity to noise. Typically used on shorter periods.
+
+    Signal strength: same as all MA indicators — normalised distance between
+    price and TEMA, squashed to [-1, 1] via tanh.
+
+    Parameters
+    ----------
+    *signals : BaseSignal
+        Upstream signals.
+    column : str
+        OHLCV column to compute TEMA on.
+    period : int
+        EMA lookback window applied at all three smoothing stages.
+    lag : int
+        Bars to shift output backward. See ``BaseIndicator`` for details.
+    """
+
+    def __init__(
+        self,
+        *signals: BaseSignal,
+        column: str = 'Close',
+        period: int = 20,
+        lag: int = 0,
+    ) -> None:
+        super().__init__(*signals, column=column, period=period, lag=lag)
+        self.plot_title = f'TEMA({self.period})'
+
+    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = self.get_data(df)
+        ema1 = df[self.column].ewm(span=self.period, adjust=False).mean()
+        ema2 = ema1.ewm(span=self.period, adjust=False).mean()
+        ema3 = ema2.ewm(span=self.period, adjust=False).mean()
+        df[self._raw_output_columns[0]] = 3.0 * ema1 - 3.0 * ema2 + ema3
+        return df
+
+    @property
+    def _raw_output_columns(self) -> list[str]:
+        return [f'indicator__tema_{self.period}']
