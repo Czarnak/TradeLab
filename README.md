@@ -13,7 +13,7 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
 - `backtesting` (execution simulation, metrics, report generation),
 - `monte_carlo` (synthetic data generation and robustness analysis),
 - `optimization` (Optuna-based parameter and weight search),
-- `mql5_export` (generate MetaTrader 5 Expert Advisors from `StandardStrategy`).
+- `mql5_export` (generate MetaTrader 5 Expert Advisors from `StandardStrategy` and `MLStrategy`).
 
 ## Features
 
@@ -47,9 +47,10 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
   - Keras model training inside Optuna trials,
   - optional post-search model pruning.
 - MQL5 Expert Advisor export:
-  - generates `.mq5` code from `StandardStrategy`,
-  - validates export compatibility before generation,
-  - supports signals, sizing rules, and indicator templates.
+  - `export_to_mql5` generates `.mq5` code from `StandardStrategy`,
+  - `export_ml_to_mql5` generates `.mq5` code from `MLStrategy` with hardcoded Dense network weights,
+  - pre-export validation for both paths, including ML model contract checks,
+  - template-driven support for signals/sizing/indicator logic (standard path) and Dense forward-pass logic (ML path).
 
 ## Installation
 
@@ -313,8 +314,10 @@ print(report["zero_fraction"], report["dead_features"])
 
 ## MQL5 Export
 
-Use `trade_lab.mql5_export` to export a `StandardStrategy` into a MetaTrader 5
-Expert Advisor (`.mq5`) source file.
+`trade_lab.mql5_export` supports two export paths to MetaTrader 5 Expert
+Advisors (`.mq5`).
+
+### StandardStrategy Path
 
 Supported components:
 
@@ -349,6 +352,70 @@ result = export_to_mql5(
 
 print(result.filepath)
 print(result.indicators_exported)
+print(result.validation.warnings)
+```
+
+### MLStrategy Path
+
+Use this path to export a trained Keras Dense network wrapped in
+`KerasModelWrapper`.
+
+Validation contract (`validate_ml_strategy`) before export:
+
+- strategy must be `MLStrategy`,
+- `strategy.model` must be `KerasModelWrapper(model, input_names)`,
+- allowed layer types: `Dense`, `Dropout`, `InputLayer`, `Concatenate`,
+- supported Dense activations: `relu`, `tanh`, `linear`, `sigmoid`,
+- final Dense layer must have exactly `1` output unit,
+- `input_names` must be non-empty,
+- supported sizers: `None`, `FixedPositionSizer`, `RiskBasedPositionSizer`.
+
+Warnings (non-fatal):
+
+- sigmoid output layer (recommended convention is tanh),
+- large models (`>10,000` parameters), which can inflate `.mq5` size and compile time.
+
+`MLStrategyIntrospector` converts the wrapper/model into `MLStrategyConfig`
+(`layers`, `feature_names`, thresholds, long/short flags, sizing) for template
+rendering. Only Dense layers are exported; `Dropout`, `InputLayer`, and
+`Concatenate` are skipped.
+
+```python
+import keras
+
+from trade_lab.ml.models import KerasModelWrapper
+from trade_lab.mql5_export import export_ml_to_mql5
+from trade_lab.strategies import MLStrategy
+
+model = keras.Sequential([
+    keras.layers.Dense(32, activation="relu", input_shape=(2,)),
+    keras.layers.Dropout(0.2),
+    keras.layers.Dense(1, activation="tanh"),
+])
+model.compile(optimizer="adam", loss="mse")
+
+wrapped = KerasModelWrapper(
+    model=model,
+    input_names=["indicator__ema_20", "indicator__rsi_14"],
+)
+
+strategy = MLStrategy(
+    model=wrapped,
+    indicators=[],
+    entry_threshold=0.3,
+    exit_threshold=0.1,
+    allow_long=True,
+    allow_short=True,
+)
+
+result = export_ml_to_mql5(
+    strategy,
+    output_path="outputs/TradeLab_ML_EA.mq5",
+    magic_number=654321,
+)
+
+print(result.filepath)
+print(result.indicators_exported)  # feature list + Dense layer summaries
 print(result.validation.warnings)
 ```
 
@@ -411,6 +478,8 @@ src/trade_lab/
     __init__.py
     code_generator.py
     introspector.py
+    ml_introspector.py
+    ml_validator.py
     validators.py
     indicator_registry.py
     signal_registry.py
@@ -476,6 +545,8 @@ Core modules:
 - [`src/trade_lab/mql5_export/__init__.py`][api-mql5-init]
 - [`src/trade_lab/mql5_export/code_generator.py`][api-mql5-codegen]
 - [`src/trade_lab/mql5_export/introspector.py`][api-mql5-introspector]
+- [`src/trade_lab/mql5_export/ml_introspector.py`][api-mql5-ml-introspector]
+- [`src/trade_lab/mql5_export/ml_validator.py`][api-mql5-ml-validator]
 - [`src/trade_lab/mql5_export/validators.py`][api-mql5-validators]
 - [`src/trade_lab/mql5_export/indicator_registry.py`][api-mql5-indicator-reg]
 - [`src/trade_lab/mql5_export/signal_registry.py`][api-mql5-signal-reg]
@@ -495,7 +566,7 @@ Examples:
 - Add more built-in strategy templates (trend-following and mean-reversion variants).
 - Extend ML optimisation with richer model families and time-series validation schemes.
 - Improve reporting with richer trade analytics and export formats.
-- Add ML Strategies code generation.
+- Extend ML MQL5 export with automated live feature wiring options.
 - Prepare packaging and release automation for PyPI distribution (maybe).
 
 ## Testing
@@ -563,6 +634,8 @@ MIT
 [api-mql5-init]: src/trade_lab/mql5_export/__init__.py
 [api-mql5-codegen]: src/trade_lab/mql5_export/code_generator.py
 [api-mql5-introspector]: src/trade_lab/mql5_export/introspector.py
+[api-mql5-ml-introspector]: src/trade_lab/mql5_export/ml_introspector.py
+[api-mql5-ml-validator]: src/trade_lab/mql5_export/ml_validator.py
 [api-mql5-validators]: src/trade_lab/mql5_export/validators.py
 [api-mql5-indicator-reg]: src/trade_lab/mql5_export/indicator_registry.py
 [api-mql5-signal-reg]: src/trade_lab/mql5_export/signal_registry.py

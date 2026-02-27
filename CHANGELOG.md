@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [0.6.0] - 2026-02-27
+
+### Added
+
+- `mql5_export` module extended with ML strategy export support.
+  Export an `MLStrategy` with a trained `KerasModelWrapper` to a complete,
+  ready-to-compile MetaTrader 5 Expert Advisor (`.mq5` file) with hardcoded
+  Dense network weights. No Python runtime or ONNX dependency required at
+  EA execution time.
+  - `ml_validator.py`:
+    - `validate_ml_strategy(strategy)` — pre-export checks for `MLStrategy`;
+      returns `ValidationResult(is_valid, errors, warnings)`. Validates that
+      `strategy.model` is a `KerasModelWrapper`, all Keras layers are Dense /
+      Dropout / InputLayer / Concatenate, activations are relu / tanh / linear /
+      sigmoid, the output layer has exactly 1 unit, and position sizer is
+      supported. Warns for sigmoid output (convention expects tanh) and for
+      models with > 10k parameters (large `.mq5` files).
+  - `ml_introspector.py`:
+    - `MLStrategyIntrospector.introspect(strategy)` — walks an `MLStrategy`
+      object tree and returns an `MLStrategyConfig` dataclass.
+    - `MLLayerConfig` — per-Dense-layer config: `index`, `units_in`,
+      `units_out`, `activation`, `weights` (kernel as `list[list[float]]`),
+      `biases` (list[float]). Dropout / InputLayer layers are excluded.
+    - `MLStrategyConfig` — full config: `layers`, `feature_names`,
+      `n_features`, `entry_threshold`, `exit_threshold`, `allow_long`,
+      `allow_short`, `sizing`. Shares attribute names with `StrategyConfig`
+      for fields consumed by `trade_logic.mq5.j2`, so the trade-logic
+      sub-template is reused without modification.
+  - `code_generator.py`:
+    - `export_ml_to_mql5(strategy, output_path, ...)` — validates,
+      introspects, renders via Jinja2, and writes a UTF-8 BOM `.mq5` file.
+      Returns `MQL5ExportResult(filepath, code, validation,
+      indicators_exported)` where `indicators_exported` contains layer
+      architecture summaries.
+  - `templates/ea_ml.mq5.j2` — master Jinja2 template for the ML EA,
+    structured in seven sections:
+    1. Property header + `#include <Trade\Trade.mqh>`.
+    2. Input parameters: thresholds, magic number, spread limit, one
+       `input double Feature_N_<name>` per model feature, sizing inputs.
+    3. Hardcoded weight arrays: `const double LAYER{i}_W[in][out]` and
+       `const double LAYER{i}_B[out]` for each Dense layer.
+    4. Global variables (`CTrade`, optional ATR handle for risk sizing).
+    5. Helper functions: `IsNewBar()`, `NormalizeLots()`.
+    6. `ComputeMLSignal(const double &features[])` — pure-MQL5 forward pass;
+       activation rendered conditionally (`MathMax(0.0,x)` for relu,
+       `MathTanh(x)` for tanh, `1/(1+MathExp(-x))` for sigmoid, identity
+       for linear).
+    7. `OnInit` / `OnDeinit` / `OnTick` — `OnTick` assembles the feature
+       array from inputs, calls `ComputeMLSignal`, then includes the
+       existing `trade_logic.mq5.j2` sub-template unchanged.
+  - `__init__.py` updated: `export_ml_to_mql5`, `MLStrategyIntrospector`,
+    and `validate_ml_strategy` added to public API and `__all__`.
+
 ## [0.5.0] - 2026-02-26
 
 ### Added

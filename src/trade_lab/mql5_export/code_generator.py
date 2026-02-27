@@ -1,7 +1,11 @@
 """MQL5 code generator — orchestrates introspection, rendering and file output.
 
 Ties together the validator, introspector, registries, and Jinja2 templates
-to produce a complete MQL5 Expert Advisor source file from a StandardStrategy.
+to produce a complete MQL5 Expert Advisor source file from a TradeLab strategy.
+
+Two public entry points:
+    ``export_to_mql5``     — for ``StandardStrategy`` (weighted indicator EA).
+    ``export_ml_to_mql5``  — for ``MLStrategy`` (hardcoded Dense network EA).
 """
 from __future__ import annotations
 
@@ -45,7 +49,7 @@ _INDICATOR_CLASS_MAP: dict[str, type] = {
 
 @dataclass
 class MQL5ExportResult:
-    """Result returned by ``export_to_mql5()``.
+    """Result returned by ``export_to_mql5()`` and ``export_ml_to_mql5()``.
 
     Parameters
     ----------
@@ -57,6 +61,7 @@ class MQL5ExportResult:
         Validation result (may contain warnings even on success).
     indicators_exported : list[str]
         Human-readable summary of each exported indicator.
+        Empty for ML exports (model architecture is summarised separately).
     """
 
     filepath: str
@@ -66,7 +71,7 @@ class MQL5ExportResult:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers (shared)
 # ---------------------------------------------------------------------------
 
 
@@ -88,15 +93,6 @@ def _enrich_indicator(ind) -> dict:
     The template receives this dict rather than the dataclass so it does not
     need to navigate Python-specific objects or know the registry structure.
     """
-    from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
-    from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
-
-    _INDICATOR_CLASS_MAP = {
-        "sma": SMA, "ema": EMA, "wma": WMA, "cma": CMA,
-        "rsi": RSI, "macd": MACD, "momentum": Momentum,
-        "larry_williams": LarryWilliams,
-    }
-
     cls = _INDICATOR_CLASS_MAP[ind.indicator_type]
     desc = INDICATOR_REGISTRY[cls]
     column = ind.params.get("column", "Close")
@@ -111,7 +107,7 @@ def _enrich_indicator(ind) -> dict:
         "var_name":        ind.var_name,
         "input_prefix":    ind.input_prefix,
         "function_name":   ind.function_name,
-        "lag":             ind.lag,             # <-- new
+        "lag":             ind.lag,
         # --- Registry descriptor fields ---
         "uses_builtin_handle": desc.uses_builtin_handle,
         "builtin_function":    desc.builtin_function,
@@ -123,17 +119,36 @@ def _enrich_indicator(ind) -> dict:
     }
 
 
-
-
-
 def _format_indicator_summary(ind: dict) -> str:
     """Format a one-line indicator description for MQL5ExportResult."""
     params_str = ", ".join(f"{k}={v}" for k, v in ind["params"].items())
     return f"{ind['class_name']}({params_str}) weight={ind['weight']}"
 
 
+def _format_ml_summary(config) -> list[str]:
+    """Format per-layer architecture summaries for MQL5ExportResult.
+
+    Parameters
+    ----------
+    config : MLStrategyConfig
+        Introspected ML strategy configuration.
+
+    Returns
+    -------
+    list[str]
+        One entry per Dense layer describing its shape and activation.
+    """
+    summaries = [f"Features: {config.feature_names}"]
+    for layer in config.layers:
+        summaries.append(
+            f"Layer {layer.index}: Dense({layer.units_in} → {layer.units_out}, "
+            f"activation={layer.activation})"
+        )
+    return summaries
+
+
 # ---------------------------------------------------------------------------
-# Public API
+# Public API — StandardStrategy export
 # ---------------------------------------------------------------------------
 
 
@@ -191,7 +206,6 @@ def export_to_mql5(
         lines = "\n".join(f"  • {e}" for e in validation.errors)
         raise ValueError(f"Strategy validation failed:\n{lines}")
 
-    # Print warnings so caller is aware even without inspecting the result
     for warning in validation.warnings:
         print(f"[mql5_export WARNING] {warning}")
 
@@ -209,8 +223,8 @@ def export_to_mql5(
         "timeframe": timeframe,
         "magic_number": magic_number,
         "max_spread": max_spread,
-        "config": config,         # StrategyConfig dataclass (for sizing, thresholds, flags)
-        "indicators": indicators,  # list of enriched dicts
+        "config": config,
+        "indicators": indicators,
     }
 
     # 5. Render
@@ -220,6 +234,7 @@ def export_to_mql5(
 
     # 6. Write file (UTF-8 with BOM — MetaEditor expects this)
     output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(code, encoding="utf-8-sig")
 
     # 7. Return result
@@ -229,4 +244,100 @@ def export_to_mql5(
         code=code,
         validation=validation,
         indicators_exported=indicators_exported,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API — MLStrategy export
+# ---------------------------------------------------------------------------
+
+
+def export_ml_to_mql5(
+    strategy: object,
+    output_path: str = "outputs\\TradeLab_ML_EA.mq5",
+    magic_number: int = 123456,
+    max_spread: int = 20,
+    ea_name: str = "TradeLab ML Expert Advisor",
+    ea_description: str = "Auto-generated from TradeLab MLStrategy",
+) -> MQL5ExportResult:
+    """Export an ``MLStrategy`` to a MetaTrader 5 Expert Advisor ``.mq5`` file.
+
+    The generated EA embeds the trained Keras model weights as static MQL5
+    arrays and implements the forward pass entirely in MQL5 — no Python
+    runtime or ONNX dependency is required at execution time.
+
+    Feature inputs are exposed as ``input double Feature_N_<name>`` variables.
+    The user is responsible for populating these with live indicator values
+    in their own MetaTrader setup.
+
+    Parameters
+    ----------
+    strategy : MLStrategy
+        The ML strategy to export.  Must have a ``KerasModelWrapper`` model
+        containing only Dense (and Dropout/InputLayer) layers.
+    output_path : str
+        File path for the generated ``.mq5`` file.
+    magic_number : int
+        EA magic number for trade filtering.
+    max_spread : int
+        Maximum allowed spread in points.  Ticks with a wider spread are
+        skipped.
+    ea_name : str
+        EA name shown in the MetaTrader Experts list.
+    ea_description : str
+        One-line description in the ``#property description`` block.
+
+    Returns
+    -------
+    MQL5ExportResult
+        File path, rendered code, validation result, and layer architecture
+        summaries in ``indicators_exported``.
+
+    Raises
+    ------
+    ValueError
+        If the strategy fails validation (fatal errors).
+    ImportError
+        If Jinja2 or Keras is not installed.
+    """
+    from trade_lab.mql5_export.ml_introspector import MLStrategyIntrospector
+    from trade_lab.mql5_export.ml_validator import validate_ml_strategy
+
+    # 1. Validate
+    validation = validate_ml_strategy(strategy)
+    if not validation.is_valid:
+        lines = "\n".join(f"  • {e}" for e in validation.errors)
+        raise ValueError(f"MLStrategy validation failed:\n{lines}")
+
+    for warning in validation.warnings:
+        print(f"[mql5_export WARNING] {warning}")
+
+    # 2. Introspect
+    config = MLStrategyIntrospector().introspect(strategy)
+
+    # 3. Build Jinja2 context
+    context: dict = {
+        "ea_name": ea_name,
+        "ea_description": ea_description,
+        "magic_number": magic_number,
+        "max_spread": max_spread,
+        "config": config,
+    }
+
+    # 4. Render
+    env = _make_jinja_env()
+    template = env.get_template("ea_ml.mq5.j2")
+    code = template.render(**context)
+
+    # 5. Write file (UTF-8 with BOM — MetaEditor expects this)
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(code, encoding="utf-8-sig")
+
+    # 6. Return result
+    return MQL5ExportResult(
+        filepath=str(output_file.resolve()),
+        code=code,
+        validation=validation,
+        indicators_exported=_format_ml_summary(config),
     )
