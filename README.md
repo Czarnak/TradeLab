@@ -51,8 +51,9 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
 - MQL5 Expert Advisor export:
   - `export_to_mql5` generates `.mq5` code from `StandardStrategy`,
   - `export_ml_to_mql5` generates `.mq5` code from `MLStrategy` with hardcoded Dense network weights,
-  - pre-export validation for both paths, including ML model contract checks,
-  - template-driven support for signals/sizing/indicator logic (standard path) and Dense forward-pass logic (ML path).
+  - `export_ml_to_mql5_onnx` generates `.mq5` code plus an `.onnx` model file for MT5 runtime inference,
+  - pre-export validation for standard, ML hardcoded, and ML ONNX paths,
+  - template-driven support for signals/sizing/indicator logic (standard path), Dense forward-pass logic (ML path), and ONNX runtime wiring (ML ONNX path).
 
 ## Installation
 
@@ -82,6 +83,12 @@ For MQL5 export workflows (Jinja2 templates for `.mq5` generation):
 
 ```bash
 pip install -e ".[mql5]"
+```
+
+For ONNX-based ML export workflows (Jinja2 + tf2onnx + onnx):
+
+```bash
+pip install -e ".[onnx]"
 ```
 
 ## Quick Start
@@ -316,7 +323,7 @@ print(report["zero_fraction"], report["dead_features"])
 
 ## MQL5 Export
 
-`trade_lab.mql5_export` supports two export paths to MetaTrader 5 Expert
+`trade_lab.mql5_export` supports three export paths to MetaTrader 5 Expert
 Advisors (`.mq5`).
 
 ### StandardStrategy Path
@@ -426,6 +433,32 @@ print(result.indicators_exported)  # feature list + Dense layer summaries
 print(result.validation.warnings)
 ```
 
+### MLStrategy ONNX Path
+
+Use this path to export an `MLStrategy` as:
+
+- a lightweight `.mq5` EA that calls MT5 `OnnxCreate`/`OnnxRun`,
+- an external `.onnx` model file converted from the wrapped Keras model.
+
+```python
+from trade_lab.mql5_export import export_ml_to_mql5_onnx
+
+result = export_ml_to_mql5_onnx(
+    strategy,
+    output_path="outputs/TradeLab_ML_ONNX_EA.mq5",
+    onnx_output_path="outputs/TradeLab_ML_ONNX_EA.onnx",  # optional
+    magic_number=654321,
+)
+
+print(result.filepath)       # .mq5 file
+print(result.onnx_filepath)  # .onnx file
+print(result.indicators_exported)
+```
+
+Deployment note:
+
+- Copy the generated `.onnx` file to your MT5 data folder under `MQL5\Files\`.
+
 ## Core Concepts
 
 ### Signals
@@ -489,6 +522,7 @@ src/trade_lab/
     introspector.py
     ml_introspector.py
     ml_validator.py
+    onnx_exporter.py
     validators.py
     indicator_registry.py
     signal_registry.py
@@ -558,6 +592,7 @@ Core modules:
 - [`src/trade_lab/mql5_export/introspector.py`][api-mql5-introspector]
 - [`src/trade_lab/mql5_export/ml_introspector.py`][api-mql5-ml-introspector]
 - [`src/trade_lab/mql5_export/ml_validator.py`][api-mql5-ml-validator]
+- [`src/trade_lab/mql5_export/onnx_exporter.py`][api-mql5-onnx-exporter]
 - [`src/trade_lab/mql5_export/validators.py`][api-mql5-validators]
 - [`src/trade_lab/mql5_export/indicator_registry.py`][api-mql5-indicator-reg]
 - [`src/trade_lab/mql5_export/signal_registry.py`][api-mql5-signal-reg]
@@ -582,10 +617,22 @@ Examples:
 
 ## Testing
 
-Run tests with:
+Run the full suite:
 
 ```bash
 pytest -v
+```
+
+Run focused ML + MQL5 exporter tests:
+
+```bash
+pytest -q tests/test_ml_module.py tests/test_mql5_export_ml.py
+```
+
+Check focused coverage for ML and MQL5 code generation:
+
+```bash
+pytest -q --cov=trade_lab.ml --cov=trade_lab.mql5_export.code_generator --cov-report=term-missing tests/test_ml_module.py tests/test_mql5_export_ml.py
 ```
 
 ## Contributing
@@ -649,6 +696,7 @@ MIT
 [api-mql5-introspector]: src/trade_lab/mql5_export/introspector.py
 [api-mql5-ml-introspector]: src/trade_lab/mql5_export/ml_introspector.py
 [api-mql5-ml-validator]: src/trade_lab/mql5_export/ml_validator.py
+[api-mql5-onnx-exporter]: src/trade_lab/mql5_export/onnx_exporter.py
 [api-mql5-validators]: src/trade_lab/mql5_export/validators.py
 [api-mql5-indicator-reg]: src/trade_lab/mql5_export/indicator_registry.py
 [api-mql5-signal-reg]: src/trade_lab/mql5_export/signal_registry.py

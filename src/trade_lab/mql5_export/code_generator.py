@@ -3,9 +3,10 @@
 Ties together the validator, introspector, registries, and Jinja2 templates
 to produce a complete MQL5 Expert Advisor source file from a TradeLab strategy.
 
-Two public entry points:
-    ``export_to_mql5``     — for ``StandardStrategy`` (weighted indicator EA).
-    ``export_ml_to_mql5``  — for ``MLStrategy`` (hardcoded Dense network EA).
+Three public entry points:
+    ``export_to_mql5``          — for ``StandardStrategy`` (weighted indicator EA).
+    ``export_ml_to_mql5``       — for ``MLStrategy`` (hardcoded Dense network EA).
+    ``export_ml_to_mql5_onnx``  — for ``MLStrategy`` (ONNX file-reference EA).
 """
 from __future__ import annotations
 
@@ -49,7 +50,7 @@ _INDICATOR_CLASS_MAP: dict[str, type] = {
 
 @dataclass
 class MQL5ExportResult:
-    """Result returned by ``export_to_mql5()`` and ``export_ml_to_mql5()``.
+    """Result returned by the three export functions.
 
     Parameters
     ----------
@@ -60,14 +61,18 @@ class MQL5ExportResult:
     validation : ValidationResult
         Validation result (may contain warnings even on success).
     indicators_exported : list[str]
-        Human-readable summary of each exported indicator.
-        Empty for ML exports (model architecture is summarised separately).
+        Human-readable summary of each exported indicator or ML layer.
+    onnx_filepath : str | None
+        Absolute path of the written ``.onnx`` model file.
+        Only populated by ``export_ml_to_mql5_onnx``; ``None`` for all
+        other export paths.
     """
 
     filepath: str
     code: str
     validation: ValidationResult
     indicators_exported: list[str] = field(default_factory=list)
+    onnx_filepath: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +197,7 @@ def export_to_mql5(
     -------
     MQL5ExportResult
         File path, rendered code, validation result, and indicator summaries.
+        ``onnx_filepath`` is always ``None`` for this export path.
 
     Raises
     ------
@@ -248,7 +254,7 @@ def export_to_mql5(
 
 
 # ---------------------------------------------------------------------------
-# Public API — MLStrategy export
+# Public API — MLStrategy export (hardcoded Dense weights)
 # ---------------------------------------------------------------------------
 
 
@@ -266,7 +272,7 @@ def export_ml_to_mql5(
     arrays and implements the forward pass entirely in MQL5 — no Python
     runtime or ONNX dependency is required at execution time.
 
-    Feature inputs are exposed as ``input double Feature_N_<name>`` variables.
+    Feature inputs are exposed as ``input double Feature_N_<n>`` variables.
     The user is responsible for populating these with live indicator values
     in their own MetaTrader setup.
 
@@ -292,6 +298,7 @@ def export_ml_to_mql5(
     MQL5ExportResult
         File path, rendered code, validation result, and layer architecture
         summaries in ``indicators_exported``.
+        ``onnx_filepath`` is always ``None`` for this export path.
 
     Raises
     ------
@@ -340,4 +347,155 @@ def export_ml_to_mql5(
         code=code,
         validation=validation,
         indicators_exported=_format_ml_summary(config),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API — MLStrategy ONNX export (file-reference approach)
+# ---------------------------------------------------------------------------
+
+
+def export_ml_to_mql5_onnx(
+    strategy: object,
+    output_path: str = "outputs\\TradeLab_ML_ONNX_EA.mq5",
+    onnx_output_path: str | None = None,
+    magic_number: int = 123456,
+    max_spread: int = 20,
+    ea_name: str = "TradeLab ML ONNX Expert Advisor",
+    ea_description: str = "Auto-generated from TradeLab MLStrategy (ONNX)",
+    opset: int = 12,
+) -> MQL5ExportResult:
+    """Export an ``MLStrategy`` to a MetaTrader 5 Expert Advisor using ONNX.
+
+    This is the recommended ML export path for non-trivial models.  Unlike
+    ``export_ml_to_mql5`` (which hardcodes all weights as MQL5 source arrays),
+    this function:
+
+    1. Converts the Keras model to a ``.onnx`` binary file via ``tf2onnx``.
+    2. Generates a lightweight ``.mq5`` EA that loads the model at runtime
+       using MT5's built-in ``OnnxCreate`` / ``OnnxRun`` API.
+
+    Two files are produced:
+
+    * The ``.mq5`` EA source — compile and attach to a chart in MetaEditor.
+    * The ``.onnx`` model file — copy to the MT5 data folder under
+      ``MQL5\\Files\\`` so the EA can locate it at runtime.
+
+    Parameters
+    ----------
+    strategy : MLStrategy
+        The ML strategy to export.  Must have a ``KerasModelWrapper`` model.
+    output_path : str
+        File path for the generated ``.mq5`` file.
+    onnx_output_path : str | None
+        File path for the generated ``.onnx`` file.  If ``None``, the path
+        is derived from ``output_path`` by replacing the ``.mq5`` suffix with
+        ``.onnx`` (e.g. ``outputs/EA.mq5`` → ``outputs/EA.onnx``).
+    magic_number : int
+        EA magic number for trade filtering.
+    max_spread : int
+        Maximum allowed spread in points.  Ticks with a wider spread are
+        skipped.
+    ea_name : str
+        EA name shown in the MetaTrader Experts list.
+    ea_description : str
+        One-line description in the ``#property description`` block.
+    opset : int
+        ONNX opset version to target.  Default 12 is the minimum required by
+        the MetaTrader 5 built-in ONNX runtime (build 3490+).
+
+    Returns
+    -------
+    MQL5ExportResult
+        * ``filepath`` — absolute path of the ``.mq5`` file.
+        * ``onnx_filepath`` — absolute path of the ``.onnx`` file.
+        * ``code`` — rendered MQL5 source.
+        * ``validation`` — pre-export validation result.
+        * ``indicators_exported`` — model architecture summary strings.
+
+    Raises
+    ------
+    ValueError
+        If the strategy fails validation (fatal errors).
+    ImportError
+        If Jinja2, tf2onnx, or onnx are not installed.
+    RuntimeError
+        If the tf2onnx conversion fails.
+
+    Notes
+    -----
+    Deployment checklist:
+
+    1. Copy the ``.onnx`` file to ``<MT5 data folder>\\MQL5\\Files\\``.
+    2. Open the ``.mq5`` file in MetaEditor and compile.
+    3. Attach the compiled EA to a chart.
+    4. Populate the ``Feature_*`` input parameters with live indicator values.
+
+    The ONNX runtime is available in MetaTrader 5 build 3490 and later.
+    """
+    from trade_lab.mql5_export.ml_introspector import MLStrategyIntrospector
+    from trade_lab.mql5_export.ml_validator import validate_ml_strategy_onnx
+    from trade_lab.mql5_export.onnx_exporter import export_keras_to_onnx
+
+    # 1. Validate (ONNX-specific checks: tf2onnx installed, model convertible)
+    validation = validate_ml_strategy_onnx(strategy)
+    if not validation.is_valid:
+        lines = "\n".join(f"  • {e}" for e in validation.errors)
+        raise ValueError(f"MLStrategy ONNX validation failed:\n{lines}")
+
+    for warning in validation.warnings:
+        print(f"[mql5_export WARNING] {warning}")
+
+    # 2. Resolve ONNX output path
+    mq5_file = Path(output_path)
+    if onnx_output_path is None:
+        resolved_onnx = mq5_file.with_suffix(".onnx")
+    else:
+        resolved_onnx = Path(onnx_output_path)
+
+    # 3. Convert Keras model → .onnx
+    # We access the raw Keras model through the KerasModelWrapper.
+    keras_model = strategy.model.model  # KerasModelWrapper.model is the keras.Model
+    actual_onnx_path = export_keras_to_onnx(
+        keras_model=keras_model,
+        output_path=str(resolved_onnx),
+        opset=opset,
+    )
+
+    # 4. Introspect strategy for template context
+    config = MLStrategyIntrospector().introspect(strategy)
+
+    # 5. Build Jinja2 context
+    # The template only needs the ONNX filename (not the full path) because
+    # MT5 resolves files relative to MQL5\Files\.  We pass just the stem so
+    # the user knows exactly what to copy where.
+    onnx_filename = Path(actual_onnx_path).name
+    context: dict = {
+        "ea_name": ea_name,
+        "ea_description": ea_description,
+        "magic_number": magic_number,
+        "max_spread": max_spread,
+        "config": config,
+        "onnx_filename": onnx_filename,
+    }
+
+    # 6. Render
+    env = _make_jinja_env()
+    template = env.get_template("ea_ml_onnx.mq5.j2")
+    code = template.render(**context)
+
+    # 7. Write .mq5 file (UTF-8 with BOM — MetaEditor requires this)
+    mq5_file.parent.mkdir(parents=True, exist_ok=True)
+    mq5_file.write_text(code, encoding="utf-8-sig")
+
+    # 8. Return result
+    summaries = _format_ml_summary(config)
+    summaries.insert(0, f"ONNX model: {actual_onnx_path}")
+
+    return MQL5ExportResult(
+        filepath=str(mq5_file.resolve()),
+        code=code,
+        validation=validation,
+        indicators_exported=summaries,
+        onnx_filepath=actual_onnx_path,
     )

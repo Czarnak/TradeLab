@@ -178,3 +178,77 @@ def validate_ml_strategy(strategy: object) -> ValidationResult:
 
     is_valid = len(errors) == 0
     return ValidationResult(is_valid=is_valid, errors=errors, warnings=warnings)
+
+
+def validate_ml_strategy_onnx(strategy: object) -> "ValidationResult":
+    """Validate an ``MLStrategy`` for ONNX-based MQL5 export.
+
+    Runs all checks from ``validate_ml_strategy`` first, then adds
+    ONNX-specific checks: whether ``tf2onnx`` and ``onnx`` are installed,
+    and whether the model architecture is known to be tf2onnx-compatible.
+
+    Parameters
+    ----------
+    strategy : object
+        The strategy to validate.
+
+    Returns
+    -------
+    ValidationResult
+        Contains ``is_valid``, ``errors`` (fatal), and ``warnings`` (non-fatal).
+
+    Notes
+    -----
+    Additional ONNX checks (on top of standard ML checks):
+
+    9.  ``tf2onnx`` package present — fatal if missing.
+    10. ``onnx`` package present — fatal if missing.
+    11. Concatenate layers — warn that Functional models with Concatenate may
+        require explicit input signatures; export may still succeed.
+    """
+    # Run the standard ML checks first — they already cover strategy type,
+    # model wrapper, layer types, activations, output unit, sizer, and
+    # feature names.  We inherit and extend.
+    base_result = validate_ml_strategy(strategy)
+    errors: list[str] = list(base_result.errors)
+    warnings: list[str] = list(base_result.warnings)
+
+    # If base validation already failed on structure, no point adding more.
+    # We still check deps so the user gets all actionable errors at once.
+
+    # 9. tf2onnx available?
+    try:
+        import tf2onnx  # noqa: F401
+    except ImportError:
+        errors.append(
+            "tf2onnx is not installed. "
+            "Install it with:  pip install 'TradeLab[onnx]'"
+        )
+
+    # 10. onnx available?
+    try:
+        import onnx  # noqa: F401
+    except ImportError:
+        errors.append(
+            "onnx is not installed. "
+            "Install it with:  pip install 'TradeLab[onnx]'"
+        )
+
+    # 11. Warn about Concatenate layers (Functional API models)
+    if base_result.is_valid:
+        from trade_lab.ml.models import KerasModelWrapper
+        if isinstance(strategy.model, KerasModelWrapper):
+            has_concatenate = any(
+                type(layer).__name__ == "Concatenate"
+                for layer in strategy.model.model.layers
+            )
+            if has_concatenate:
+                warnings.append(
+                    "Model contains Concatenate layers (Functional API). "
+                    "tf2onnx may require an explicit input_signature for "
+                    "correct conversion. If export fails, try rebuilding the "
+                    "model as a Sequential architecture."
+                )
+
+    is_valid = len(errors) == 0
+    return ValidationResult(is_valid=is_valid, errors=errors, warnings=warnings)

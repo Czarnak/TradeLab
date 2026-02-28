@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "TradeLab"
-version = "0.6.0"
+version = "0.7.0"
 description = "A modular framework for backtesting trading strategies"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["trading", "backtesting", "finance", "algorithmic-trading"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Financial and Insurance Industry",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -43,6 +43,11 @@ ml = [
 ]
 mql5 = [
     "Jinja2>=3.1"
+]
+onnx = [
+    "Jinja2>=3.1",
+    "tf2onnx>=1.16",
+    "onnx>=1.15",
 ]
 dev = [
     "pytest>=7.0",

@@ -7,13 +7,20 @@ import types
 import numpy as np
 import pytest
 
+import trade_lab.mql5_export.ml_validator as ml_validator_module
+import trade_lab.mql5_export.onnx_exporter as onnx_exporter_module
 from trade_lab.ml.models import KerasModelWrapper
+from trade_lab.mql5_export.code_generator import export_ml_to_mql5, export_ml_to_mql5_onnx
+from trade_lab.mql5_export.introspector import SizingConfig
 from trade_lab.mql5_export.ml_introspector import (
+    MLLayerConfig,
+    MLStrategyConfig,
     MLStrategyIntrospector,
     _extract_sizing,
     _normalise_activation,
 )
 from trade_lab.mql5_export.ml_validator import validate_ml_strategy
+from trade_lab.mql5_export.validators import ValidationResult
 from trade_lab.sizing.fixed import FixedPositionSizer
 from trade_lab.sizing.risk_based import RiskBasedPositionSizer
 from trade_lab.strategies.ml_strategy import MLStrategy
@@ -90,6 +97,28 @@ def _strategy_with_wrapper(
         allow_short=allow_short,
         entry_threshold=entry_threshold,
         exit_threshold=exit_threshold,
+    )
+
+
+def _sample_ml_config() -> MLStrategyConfig:
+    return MLStrategyConfig(
+        layers=[
+            MLLayerConfig(
+                index=0,
+                units_in=2,
+                units_out=1,
+                activation="tanh",
+                weights=[[0.1], [0.2]],
+                biases=[0.05],
+            )
+        ],
+        feature_names=["feat_a", "feat_b"],
+        n_features=2,
+        entry_threshold=0.4,
+        exit_threshold=0.15,
+        allow_long=True,
+        allow_short=True,
+        sizing=SizingConfig(sizer_type="none", params={}),
     )
 
 
@@ -314,3 +343,137 @@ def test_validate_ml_strategy_emits_sigmoid_and_large_model_warnings(monkeypatch
     assert result.errors == []
     assert any("Output layer uses sigmoid activation" in w for w in result.warnings)
     assert any("Model has 10,301 parameters" in w for w in result.warnings)
+
+
+def test_export_ml_to_mql5_writes_file_and_prints_warnings(monkeypatch, tmp_path, capsys):
+    validation = ValidationResult(is_valid=True, errors=[], warnings=["test-warning"])
+    monkeypatch.setattr(
+        ml_validator_module,
+        "validate_ml_strategy",
+        lambda _strategy: validation,
+    )
+    monkeypatch.setattr(
+        MLStrategyIntrospector,
+        "introspect",
+        lambda self, _strategy: _sample_ml_config(),
+    )
+
+    out_file = tmp_path / "ml_export.mq5"
+    result = export_ml_to_mql5(
+        strategy=object(),
+        output_path=str(out_file),
+        magic_number=77,
+        ea_name="UnitTest ML EA",
+    )
+    captured = capsys.readouterr()
+
+    assert "[mql5_export WARNING] test-warning" in captured.out
+    assert out_file.exists()
+    assert result.validation is validation
+    assert result.onnx_filepath is None
+    assert result.indicators_exported[0] == "Features: ['feat_a', 'feat_b']"
+    assert "Layer 0: Dense(2" in result.indicators_exported[1]
+    assert "MagicNumber    = 77" in result.code
+    assert "Feature_0_feat_a" in result.code
+
+
+def test_export_ml_to_mql5_raises_when_validation_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        ml_validator_module,
+        "validate_ml_strategy",
+        lambda _strategy: ValidationResult(is_valid=False, errors=["bad model"], warnings=[]),
+    )
+
+    with pytest.raises(ValueError, match="MLStrategy validation failed"):
+        export_ml_to_mql5(strategy=object(), output_path=str(tmp_path / "invalid.mq5"))
+
+
+def test_export_ml_to_mql5_onnx_uses_default_onnx_path_and_filename(monkeypatch, tmp_path, capsys):
+    validation = ValidationResult(is_valid=True, errors=[], warnings=["onnx-warning"])
+    monkeypatch.setattr(
+        ml_validator_module,
+        "validate_ml_strategy_onnx",
+        lambda _strategy: validation,
+    )
+    monkeypatch.setattr(
+        MLStrategyIntrospector,
+        "introspect",
+        lambda self, _strategy: _sample_ml_config(),
+    )
+
+    captured_args = {}
+
+    def _fake_export_keras_to_onnx(keras_model, output_path, opset):
+        captured_args["keras_model"] = keras_model
+        captured_args["output_path"] = output_path
+        captured_args["opset"] = opset
+        return str(tmp_path / "converted_model.onnx")
+
+    monkeypatch.setattr(onnx_exporter_module, "export_keras_to_onnx", _fake_export_keras_to_onnx)
+
+    strategy = types.SimpleNamespace(model=types.SimpleNamespace(model="keras-model"))
+    out_file = tmp_path / "ml_onnx_export.mq5"
+
+    result = export_ml_to_mql5_onnx(
+        strategy=strategy,
+        output_path=str(out_file),
+        magic_number=99,
+        opset=17,
+    )
+    captured = capsys.readouterr()
+
+    assert "[mql5_export WARNING] onnx-warning" in captured.out
+    assert captured_args["keras_model"] == "keras-model"
+    assert captured_args["output_path"] == str(out_file.with_suffix(".onnx"))
+    assert captured_args["opset"] == 17
+    assert out_file.exists()
+    assert result.validation is validation
+    assert result.onnx_filepath == str(tmp_path / "converted_model.onnx")
+    assert result.indicators_exported[0].startswith("ONNX model:")
+    assert 'const string ONNX_FILENAME = "converted_model.onnx";' in result.code
+
+
+def test_export_ml_to_mql5_onnx_honours_explicit_onnx_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        ml_validator_module,
+        "validate_ml_strategy_onnx",
+        lambda _strategy: ValidationResult(is_valid=True, errors=[], warnings=[]),
+    )
+    monkeypatch.setattr(
+        MLStrategyIntrospector,
+        "introspect",
+        lambda self, _strategy: _sample_ml_config(),
+    )
+
+    captured = {}
+
+    def _fake_export_keras_to_onnx(keras_model, output_path, opset):
+        captured["output_path"] = output_path
+        return str(tmp_path / "custom_returned.onnx")
+
+    monkeypatch.setattr(onnx_exporter_module, "export_keras_to_onnx", _fake_export_keras_to_onnx)
+
+    explicit_onnx = tmp_path / "models" / "custom_name.onnx"
+    strategy = types.SimpleNamespace(model=types.SimpleNamespace(model="keras-model"))
+
+    export_ml_to_mql5_onnx(
+        strategy=strategy,
+        output_path=str(tmp_path / "ea.mq5"),
+        onnx_output_path=str(explicit_onnx),
+    )
+
+    assert captured["output_path"] == str(explicit_onnx)
+
+
+def test_export_ml_to_mql5_onnx_raises_when_validation_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        ml_validator_module,
+        "validate_ml_strategy_onnx",
+        lambda _strategy: ValidationResult(is_valid=False, errors=["missing dependency"], warnings=[]),
+    )
+
+    with pytest.raises(ValueError, match="MLStrategy ONNX validation failed"):
+        export_ml_to_mql5_onnx(
+            strategy=object(),
+            output_path=str(tmp_path / "invalid_onnx.mq5"),
+        )

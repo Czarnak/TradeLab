@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [0.7.0] - 2026-02-28
+
+### Added
+
+- `mql5_export` module extended with ONNX-based ML strategy export support.
+  Export an `MLStrategy` with a trained `KerasModelWrapper` to a MetaTrader 5
+  Expert Advisor that loads the model at runtime via MT5's built-in ONNX
+  runtime — no hardcoded weight arrays, no Python dependency on the EA side.
+  Requires `pip install 'TradeLab[onnx]'` (adds `tf2onnx>=1.16` and
+  `onnx>=1.15`; MT5 build 3490+ required at runtime).
+  - `onnx_exporter.py`:
+    - `export_keras_to_onnx(keras_model, output_path, opset)` — converts a
+      Keras `Sequential` or Functional `Model` to an ONNX binary file via
+      `tf2onnx.convert.from_keras`. Default opset 12 (MT5 minimum). Returns
+      the absolute path of the written `.onnx` file.
+  - `ml_validator.py`:
+    - `validate_ml_strategy_onnx(strategy)` — extends `validate_ml_strategy`
+      with ONNX-specific checks: `tf2onnx` and `onnx` packages present (fatal
+      if missing), and a warning for Functional models with `Concatenate`
+      layers that may require explicit input signatures for tf2onnx.
+  - `code_generator.py`:
+    - `MQL5ExportResult` gains an optional `onnx_filepath: str | None = None`
+      field, populated only by `export_ml_to_mql5_onnx`. All existing export
+      paths leave it as `None` — no breaking change.
+    - `export_ml_to_mql5_onnx(strategy, output_path, onnx_output_path, ...)`
+      — validates, converts Keras → ONNX, introspects, renders the ONNX EA
+      template, writes both a UTF-8 BOM `.mq5` file and a `.onnx` binary.
+      The `onnx_output_path` defaults to the `.mq5` path with `.onnx` suffix.
+      Returns `MQL5ExportResult` with both `filepath` and `onnx_filepath`
+      populated. `indicators_exported` prefixed with the ONNX model path.
+  - `templates/ea_ml_onnx.mq5.j2` — new Jinja2 template for the ONNX EA,
+    structured in six sections:
+    1. Property header + `#include <Trade\Trade.mqh>`.
+    2. Input parameters: magic number, spread, thresholds, one
+       `input double Feature_N_<n>` per model feature, sizing inputs.
+    3. Global variables: `CTrade`, `OnnxModel` handle, optional ATR handle.
+    4. Helper functions: `IsNewBar()`, `NormalizeLots()`.
+    5. `ComputeOnnxSignal()` — assembles a `matrix(1, N)` from feature inputs,
+       calls `OnnxRun`, returns the scalar output.
+    6. `OnInit` / `OnDeinit` / `OnTick` — `OnInit` calls `OnnxCreate`,
+       `OnnxSetInputShape`, `OnnxSetOutputShape`; `OnDeinit` calls
+       `OnnxRelease`; `OnTick` calls `ComputeOnnxSignal` then reuses the
+       existing `trade_logic.mq5.j2` sub-template.
+  - `__init__.py` updated: `export_ml_to_mql5_onnx` and
+    `validate_ml_strategy_onnx` added to public API and `__all__`.
+- `[onnx]` optional extra added to `pyproject.toml`:
+  `Jinja2>=3.1`, `tf2onnx>=1.16`, `onnx>=1.15`.
+
+### Changed
+
+- `MQL5ExportResult` dataclass gains `onnx_filepath: str | None = None`.
+  Default is `None`; existing code using the dataclass positionally or by
+  keyword is unaffected (new field has a default).
+
 ## [0.6.0] - 2026-02-27
 
 ### Added
