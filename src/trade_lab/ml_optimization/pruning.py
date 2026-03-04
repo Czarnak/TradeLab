@@ -118,16 +118,19 @@ class ModelPruner:
         # Dense layer kernel row is zero after pruning.
         dead_features: list[str] = []
         surviving_features: list[str] = list(feature_names)
-        if first_dense_kernel is not None and len(feature_names) == first_dense_kernel.shape[0]:
+        if (
+            first_dense_kernel is not None
+            and len(feature_names) == first_dense_kernel.shape[0]
+        ):
             for i, name in enumerate(feature_names):
                 if np.all(first_dense_kernel[i, :] == 0.0):
                     dead_features.append(name)
             surviving_features = [f for f in feature_names if f not in dead_features]
 
         report = {
-            'zero_fraction': total_zeroed / total_weights if total_weights else 0.0,
-            'dead_features': dead_features,
-            'surviving_features': surviving_features,
+            "zero_fraction": total_zeroed / total_weights if total_weights else 0.0,
+            "dead_features": dead_features,
+            "surviving_features": surviving_features,
         }
         return model, report
 
@@ -166,9 +169,10 @@ class ModelPruner:
 
         # Step 1 — Prune model
         pruned_model, report = self.prune_model(
-            result.best_model, result.feature_names,
+            result.best_model,
+            result.feature_names,
         )
-        dead_set = set(report['dead_features'])
+        dead_set = set(report["dead_features"])
 
         # Step 2 — Filter: drop indicators whose output columns are all dead.
         #           Partially alive indicators are kept.
@@ -214,7 +218,7 @@ class ModelPruner:
             layer.set_weights(weights)
 
         fine_tuned_model = keras.Model(inputs=inputs, outputs=x)
-        fine_tuned_model.compile(optimizer='adam', loss='mse')
+        fine_tuned_model.compile(optimizer="adam", loss="mse")
         fine_tuned_model.fit(X_train, y_train, epochs=fine_tune_epochs, verbose=0)
 
         # Step 6 — Wrap and rebuild strategy

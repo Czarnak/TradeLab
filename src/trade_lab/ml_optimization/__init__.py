@@ -62,9 +62,9 @@ from trade_lab.ml_optimization.result import MLOptimizationResult
 from trade_lab.ml_optimization.search_space import IndicatorSpec
 
 __all__ = [
-    'FeatureMatrix',
-    'IndicatorSpec',
-    'MLOptimizer',
-    'MLOptimizationResult',
-    'ModelPruner',
+    "FeatureMatrix",
+    "IndicatorSpec",
+    "MLOptimizer",
+    "MLOptimizationResult",
+    "ModelPruner",
 ]

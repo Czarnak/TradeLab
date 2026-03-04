@@ -76,7 +76,7 @@ class FeatureMatrix:
         feature_cols = self.feature_names
 
         # Step 3 — compute target: log forward return
-        y_series = np.log(df['Close']).diff().shift(-1)
+        y_series = np.log(df["Close"]).diff().shift(-1)
 
         # Step 4 — drop NaN rows (indicator warmup, lags, final row)
         mask = df[feature_cols].notna().all(axis=1) & y_series.notna()

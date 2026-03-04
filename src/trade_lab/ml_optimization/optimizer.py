@@ -38,13 +38,13 @@ if TYPE_CHECKING:
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 _MINIMIZE_METRICS = {
-    'annual_volatility',
-    'total_commission',
+    "annual_volatility",
+    "total_commission",
 }
 
 
 def _infer_direction(metric: str) -> str:
-    return 'minimize' if metric in _MINIMIZE_METRICS else 'maximize'
+    return "minimize" if metric in _MINIMIZE_METRICS else "maximize"
 
 
 class MLOptimizer:
@@ -168,9 +168,9 @@ class MLOptimizer:
 
     def _engine_kwargs(self) -> dict[str, Any]:
         return {
-            'initial_capital': self.initial_capital,
-            'commission': self.commission,
-            'slippage': self.slippage,
+            "initial_capital": self.initial_capital,
+            "commission": self.commission,
+            "slippage": self.slippage,
         }
 
     def _build_result(self, study: optuna.Study) -> MLOptimizationResult:
@@ -185,13 +185,12 @@ class MLOptimizer:
         best_value = best_trial.value
 
         # Retrieve stored spec
-        raw_specs = best_trial.user_attrs['indicator_specs']
+        raw_specs = best_trial.user_attrs["indicator_specs"]
         spec_tuples = _deserialize_specs(raw_specs)
 
         # Rebuild indicators with lag baked in
         indicators: list[BaseIndicator] = [
-            cls(period=period, lag=lag)
-            for cls, period, lag in spec_tuples
+            cls(period=period, lag=lag) for cls, period, lag in spec_tuples
         ]
 
         # Rebuild FeatureMatrix and refit scaler on training data
@@ -203,7 +202,8 @@ class MLOptimizer:
         n_features = X_train.shape[1]
         model = self.model_factory(n_features)
         model.fit(
-            X_train, y_train,
+            X_train,
+            y_train,
             validation_data=(X_val, y_val),
             epochs=self.n_epochs,
             verbose=0,
@@ -222,18 +222,18 @@ class MLOptimizer:
         engine = BacktestEngine(strategy=strategy, **self._engine_kwargs())
         val_metrics = engine.run_on(self.val_df).metrics
         test_metrics = (
-            engine.run_on(self.test_df).metrics
-            if self.test_df is not None else None
+            engine.run_on(self.test_df).metrics if self.test_df is not None else None
         )
 
         trials_df = self._build_trials_df(study)
         completed = sum(
-            1 for t in study.trials
-            if t.state == optuna.trial.TrialState.COMPLETE
+            1 for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
         )
         failed = sum(
-            1 for t in study.trials
-            if t.state in (
+            1
+            for t in study.trials
+            if t.state
+            in (
                 optuna.trial.TrialState.FAIL,
                 optuna.trial.TrialState.PRUNED,
             )
@@ -262,10 +262,10 @@ class MLOptimizer:
     def _build_trials_df(study: optuna.Study) -> pd.DataFrame:
         rows = []
         for t in study.trials:
-            row = {'trial': t.number, 'value': t.value, 'state': t.state.name}
+            row = {"trial": t.number, "value": t.value, "state": t.state.name}
             row.update(t.params)
             if t.datetime_start and t.datetime_complete:
-                row['duration_s'] = (
+                row["duration_s"] = (
                     t.datetime_complete - t.datetime_start
                 ).total_seconds()
             rows.append(row)

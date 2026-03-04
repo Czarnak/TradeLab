@@ -30,14 +30,14 @@ class BaseMA(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         lag: int = 0,
     ) -> None:
         super().__init__(*signals, lag=lag)
         self.column = column
         self.period = period
-        self.plot_title = f'MA({self.period})'
+        self.plot_title = f"MA({self.period})"
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         # Implemented by concrete subclasses.
@@ -53,24 +53,32 @@ class BaseMA(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[self.column],
-            mode='lines', name=self.column,
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col],
-            mode='lines', name=col,
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[self.column],
+                mode="lines",
+                name=self.column,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name=col,
+            )
+        )
         fig.update_layout(
             title=self.plot_title,
-            xaxis_title='Date',
-            yaxis_title='Price',
+            xaxis_title="Date",
+            yaxis_title="Price",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__ma_{self.period}']
+        return [f"indicator__ma_{self.period}"]
 
 
 class SMA(BaseMA):
@@ -86,12 +94,12 @@ class SMA(BaseMA):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         lag: int = 0,
     ) -> None:
         super().__init__(*signals, column=column, period=period, lag=lag)
-        self.plot_title = f'SMA({self.period})'
+        self.plot_title = f"SMA({self.period})"
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
@@ -101,7 +109,7 @@ class SMA(BaseMA):
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__sma_{self.period}']
+        return [f"indicator__sma_{self.period}"]
 
 
 class EMA(BaseMA):
@@ -117,12 +125,12 @@ class EMA(BaseMA):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         lag: int = 0,
     ) -> None:
         super().__init__(*signals, column=column, period=period, lag=lag)
-        self.plot_title = f'EMA({self.period})'
+        self.plot_title = f"EMA({self.period})"
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
@@ -132,7 +140,7 @@ class EMA(BaseMA):
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__ema_{self.period}']
+        return [f"indicator__ema_{self.period}"]
 
 
 class WMA(BaseMA):
@@ -149,26 +157,31 @@ class WMA(BaseMA):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         lag: int = 0,
     ) -> None:
         super().__init__(*signals, column=column, period=period, lag=lag)
-        self.plot_title = f'WMA({self.period})'
+        self.plot_title = f"WMA({self.period})"
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
         col = self._raw_output_columns[0]
         # Weights [1, 2, ..., period] normalised by their sum period*(period+1)/2
         weights = np.arange(1, self.period + 1) / (self.period * (self.period + 1) / 2)
-        df[col] = df[self.column].rolling(self.period).apply(
-            lambda x: np.dot(x, weights), raw=True,
+        df[col] = (
+            df[self.column]
+            .rolling(self.period)
+            .apply(
+                lambda x: np.dot(x, weights),
+                raw=True,
+            )
         )
         return df
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__wma_{self.period}']
+        return [f"indicator__wma_{self.period}"]
 
 
 class CMA(BaseMA):
@@ -185,12 +198,12 @@ class CMA(BaseMA):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         lag: int = 0,
     ) -> None:
         super().__init__(*signals, column=column, period=period, lag=lag)
-        self.plot_title = f'CMA({self.period})'
+        self.plot_title = f"CMA({self.period})"
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
@@ -200,8 +213,8 @@ class CMA(BaseMA):
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__cma_{self.period}']
-    
+        return [f"indicator__cma_{self.period}"]
+
 
 class DEMA(BaseMA):
     """Double Exponential Moving Average indicator.
@@ -232,12 +245,12 @@ class DEMA(BaseMA):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         lag: int = 0,
     ) -> None:
         super().__init__(*signals, column=column, period=period, lag=lag)
-        self.plot_title = f'DEMA({self.period})'
+        self.plot_title = f"DEMA({self.period})"
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
@@ -248,7 +261,7 @@ class DEMA(BaseMA):
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__dema_{self.period}']
+        return [f"indicator__dema_{self.period}"]
 
 
 class TEMA(BaseMA):
@@ -279,12 +292,12 @@ class TEMA(BaseMA):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         lag: int = 0,
     ) -> None:
         super().__init__(*signals, column=column, period=period, lag=lag)
-        self.plot_title = f'TEMA({self.period})'
+        self.plot_title = f"TEMA({self.period})"
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
@@ -296,4 +309,4 @@ class TEMA(BaseMA):
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__tema_{self.period}']
+        return [f"indicator__tema_{self.period}"]

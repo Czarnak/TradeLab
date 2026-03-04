@@ -13,4 +13,4 @@ try:
 except ModuleNotFoundError:
     generate_report = None
 
-__all__ = ['BacktestEngine', 'BacktestResult', 'compute_metrics', 'generate_report']
+__all__ = ["BacktestEngine", "BacktestResult", "compute_metrics", "generate_report"]

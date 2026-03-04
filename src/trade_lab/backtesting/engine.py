@@ -11,6 +11,7 @@ from trade_lab.backtesting.metrics import compute_metrics
 @dataclass
 class BacktestResult:
     """Container for backtest output."""
+
     df: pd.DataFrame
     equity_curve: pd.Series
     trade_log: pd.DataFrame
@@ -145,15 +146,15 @@ class BacktestEngine:
     def _fetch_data(self) -> pd.DataFrame:
         df = yf.download(self.ticker, start=self.start, end=self.end)
         if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.droplevel('Ticker')
+            df.columns = df.columns.droplevel("Ticker")
         return df
 
     @staticmethod
     def _compute_atr(df: pd.DataFrame, period: int = 14) -> np.ndarray:
         """Average True Range for position sizing volatility input."""
-        high = df['High'].to_numpy()
-        low = df['Low'].to_numpy()
-        close = df['Close'].to_numpy()
+        high = df["High"].to_numpy()
+        low = df["Low"].to_numpy()
+        close = df["Close"].to_numpy()
 
         prev_close = np.empty(len(close), dtype=float)
         prev_close[0] = np.nan
@@ -172,15 +173,15 @@ class BacktestEngine:
 
     def _simulate(self, df: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame]:
         n = len(df)
-        signals = df['signal_strength'].to_numpy()
-        closes = df['Close'].to_numpy()
+        signals = df["signal_strength"].to_numpy()
+        closes = df["Close"].to_numpy()
         dates = df.index
         has_sizer = self.strategy.position_sizer is not None
         atr = self._compute_atr(df) if has_sizer else None
 
         # State
         cash = self.initial_capital
-        pos = 0.0           # units held (+ long, − short)
+        pos = 0.0  # units held (+ long, − short)
         entry_price = 0.0
         entry_date = None
         entry_bar = 0
@@ -210,19 +211,21 @@ class BacktestEngine:
                     exec_price = price * (1 - self.slippage)
                     comm = abs(pos) * exec_price * self.commission
                     proceeds = pos * exec_price - comm
-                    pnl = (proceeds - (pos * entry_price + entry_comm))  / self.leverage
+                    pnl = (proceeds - (pos * entry_price + entry_comm)) / self.leverage
                     cash += pnl
-                    trades.append({
-                        'direction': 'long',
-                        'entry_date': entry_date,
-                        'exit_date': dates[i],
-                        'entry_price': entry_price,
-                        'exit_price': exec_price,
-                        'size': pos,
-                        'pnl': pnl,
-                        'commission': entry_comm + comm,
-                        'bars_held': i - entry_bar,
-                    })
+                    trades.append(
+                        {
+                            "direction": "long",
+                            "entry_date": entry_date,
+                            "exit_date": dates[i],
+                            "entry_price": entry_price,
+                            "exit_price": exec_price,
+                            "size": pos,
+                            "pnl": pnl,
+                            "commission": entry_comm + comm,
+                            "bars_held": i - entry_bar,
+                        }
+                    )
                     pos = 0.0
 
             elif pos < 0:  # short
@@ -232,17 +235,19 @@ class BacktestEngine:
                     cost = abs(pos) * exec_price + comm
                     pnl = (abs(pos) * entry_price - cost - entry_comm) / self.leverage
                     cash += pnl
-                    trades.append({
-                        'direction': 'short',
-                        'entry_date': entry_date,
-                        'exit_date': dates[i],
-                        'entry_price': entry_price,
-                        'exit_price': exec_price,
-                        'size': abs(pos),
-                        'pnl': pnl,
-                        'commission': entry_comm + comm,
-                        'bars_held': i - entry_bar,
-                    })
+                    trades.append(
+                        {
+                            "direction": "short",
+                            "entry_date": entry_date,
+                            "exit_date": dates[i],
+                            "entry_price": entry_price,
+                            "exit_price": exec_price,
+                            "size": abs(pos),
+                            "pnl": pnl,
+                            "commission": entry_comm + comm,
+                            "bars_held": i - entry_bar,
+                        }
+                    )
                     pos = 0.0
 
             # ---- Open new position if flat ----
@@ -251,7 +256,9 @@ class BacktestEngine:
                     exec_price = price * (1 + self.slippage)
                     size = (
                         self.strategy.position_sizer.compute_size(
-                            sig, cash, exec_price,
+                            sig,
+                            cash,
+                            exec_price,
                             volatility=atr[i] if atr is not None else None,
                         )
                         if has_sizer
@@ -270,7 +277,9 @@ class BacktestEngine:
                     exec_price = price * (1 - self.slippage)
                     size = (
                         self.strategy.position_sizer.compute_size(
-                            sig, cash, exec_price,
+                            sig,
+                            cash,
+                            exec_price,
                             volatility=atr[i] if atr is not None else None,
                         )
                         if has_sizer
@@ -287,6 +296,6 @@ class BacktestEngine:
 
             equity_arr[i] = cash + pos * (price - entry_price) / self.leverage
 
-        equity_curve = pd.Series(equity_arr, index=dates, name='equity')
+        equity_curve = pd.Series(equity_arr, index=dates, name="equity")
         trade_log = pd.DataFrame(trades)
         return equity_curve, trade_log

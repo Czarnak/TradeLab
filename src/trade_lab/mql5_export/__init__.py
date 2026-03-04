@@ -73,7 +73,7 @@ MQL5 export requires ``Jinja2>=3.1``:
 
     pip install "TradeLab[mql5]"
 
-ONNX export additionally requires ``tf2onnx`` and ``onnx``:
+ONNX export additionally requires ``tf2onnx`` and ``onnx`` (Python 3.10-3.12):
 
 .. code-block:: bash
 
@@ -131,6 +131,7 @@ Example — MLStrategy (ONNX)
 >>> print(result.filepath)       # .mq5 path
 >>> print(result.onnx_filepath)  # .onnx path — copy to MQL5\\Files\\
 """
+
 from __future__ import annotations
 
 try:
@@ -149,7 +150,10 @@ from trade_lab.mql5_export.code_generator import (
 )
 from trade_lab.mql5_export.introspector import StrategyIntrospector
 from trade_lab.mql5_export.ml_introspector import MLStrategyIntrospector
-from trade_lab.mql5_export.ml_validator import validate_ml_strategy, validate_ml_strategy_onnx
+from trade_lab.mql5_export.ml_validator import (
+    validate_ml_strategy,
+    validate_ml_strategy_onnx,
+)
 from trade_lab.mql5_export.validators import validate_strategy
 
 __all__ = [

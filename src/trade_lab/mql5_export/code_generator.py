@@ -8,6 +8,7 @@ Three public entry points:
     ``export_ml_to_mql5``       — for ``MLStrategy`` (hardcoded Dense network EA).
     ``export_ml_to_mql5_onnx``  — for ``MLStrategy`` (ONNX file-reference EA).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,7 +24,10 @@ except ImportError as _exc:
 
 from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
 from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
-from trade_lab.mql5_export.indicator_registry import APPLIED_PRICE_MAP, INDICATOR_REGISTRY
+from trade_lab.mql5_export.indicator_registry import (
+    APPLIED_PRICE_MAP,
+    INDICATOR_REGISTRY,
+)
 from trade_lab.mql5_export.introspector import StrategyIntrospector
 from trade_lab.mql5_export.validators import ValidationResult, validate_strategy
 
@@ -103,24 +107,24 @@ def _enrich_indicator(ind) -> dict:
     column = ind.params.get("column", "Close")
     return {
         # --- IndicatorConfig fields ---
-        "indicator_type":  ind.indicator_type,
-        "class_name":      ind.class_name,
-        "params":          ind.params,
-        "weight":          ind.weight,
-        "signals":         ind.signals,
-        "output_columns":  ind.output_columns,
-        "var_name":        ind.var_name,
-        "input_prefix":    ind.input_prefix,
-        "function_name":   ind.function_name,
-        "lag":             ind.lag,
+        "indicator_type": ind.indicator_type,
+        "class_name": ind.class_name,
+        "params": ind.params,
+        "weight": ind.weight,
+        "signals": ind.signals,
+        "output_columns": ind.output_columns,
+        "var_name": ind.var_name,
+        "input_prefix": ind.input_prefix,
+        "function_name": ind.function_name,
+        "lag": ind.lag,
         # --- Registry descriptor fields ---
         "uses_builtin_handle": desc.uses_builtin_handle,
-        "builtin_function":    desc.builtin_function,
-        "ma_method":           desc.ma_method,
-        "n_buffers":           desc.n_buffers,
+        "builtin_function": desc.builtin_function,
+        "ma_method": desc.ma_method,
+        "n_buffers": desc.n_buffers,
         # --- Computed convenience fields ---
-        "applied_price":  APPLIED_PRICE_MAP.get(column, "PRICE_CLOSE"),
-        "is_ma_type":     ind.indicator_type in ("sma", "ema", "wma"),
+        "applied_price": APPLIED_PRICE_MAP.get(column, "PRICE_CLOSE"),
+        "is_ma_type": ind.indicator_type in ("sma", "ema", "wma"),
     }
 
 

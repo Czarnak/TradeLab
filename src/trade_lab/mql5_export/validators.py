@@ -3,6 +3,7 @@
 Checks a strategy object for compatibility with the MQL5 exporter before
 any code is generated. Errors are fatal; warnings are informational.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

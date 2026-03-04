@@ -35,9 +35,9 @@ class KerasModelWrapper:
         """Persist model weights and feature metadata to a directory."""
         out = Path(path)
         out.mkdir(parents=True, exist_ok=True)
-        self.model.save(out / 'model.keras')
-        with open(out / 'metadata.json', 'w', encoding='utf-8') as f:
-            json.dump({'input_names': self.input_names}, f)
+        self.model.save(out / "model.keras")
+        with open(out / "metadata.json", "w", encoding="utf-8") as f:
+            json.dump({"input_names": self.input_names}, f)
 
     @classmethod
     def load(cls, path: str) -> KerasModelWrapper:
@@ -45,10 +45,10 @@ class KerasModelWrapper:
         import keras  # deferred to keep module importable without tensorflow
 
         p = Path(path)
-        model = keras.models.load_model(p / 'model.keras')
-        with open(p / 'metadata.json', encoding='utf-8') as f:
+        model = keras.models.load_model(p / "model.keras")
+        with open(p / "metadata.json", encoding="utf-8") as f:
             meta = json.load(f)
-        return cls(model, meta['input_names'])
+        return cls(model, meta["input_names"])
 
 
 # ------------------------------------------------------------------
@@ -88,14 +88,14 @@ def dense_model(
         inputs = keras.Input(shape=(input_dim,))
         x = inputs
         for units in layers:
-            x = keras.layers.Dense(units, activation='relu')(x)
+            x = keras.layers.Dense(units, activation="relu")(x)
             x = keras.layers.Dropout(dropout)(x)
-        output = keras.layers.Dense(1, activation='tanh')(x)
+        output = keras.layers.Dense(1, activation="tanh")(x)
 
         model = keras.Model(inputs, output)
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-            loss='mse',
+            loss="mse",
         )
         return model
 
@@ -131,12 +131,12 @@ def lstm_model(
         inputs = keras.Input(shape=(sequence_length, input_dim))
         x = keras.layers.LSTM(units)(inputs)
         x = keras.layers.Dropout(dropout)(x)
-        output = keras.layers.Dense(1, activation='tanh')(x)
+        output = keras.layers.Dense(1, activation="tanh")(x)
 
         model = keras.Model(inputs, output)
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-            loss='mse',
+            loss="mse",
         )
         return model
 

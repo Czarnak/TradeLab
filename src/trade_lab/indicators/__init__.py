@@ -19,14 +19,33 @@ from trade_lab.indicators.trend import ADX, ATR, MassIndex
 
 __all__ = [
     # Base
-    'BaseIndicator',
+    "BaseIndicator",
     # Moving averages
-    'SMA', 'EMA', 'WMA', 'CMA', 'DEMA', 'TEMA',
+    "SMA",
+    "EMA",
+    "WMA",
+    "CMA",
+    "DEMA",
+    "TEMA",
     # Oscillators
-    'RSI', 'MACD', 'Momentum', 'LarryWilliams',
-    'BollingerBands', 'CCI', 'Stochastic', 'ROC', 'TRIX', 'DPO', 'RVI', 'DeMarker',
+    "RSI",
+    "MACD",
+    "Momentum",
+    "LarryWilliams",
+    "BollingerBands",
+    "CCI",
+    "Stochastic",
+    "ROC",
+    "TRIX",
+    "DPO",
+    "RVI",
+    "DeMarker",
     # Volume
-    'OBV', 'ForceIndex', 'CHO',
+    "OBV",
+    "ForceIndex",
+    "CHO",
     # Trend / volatility
-    'ADX', 'ATR', 'MassIndex',
+    "ADX",
+    "ATR",
+    "MassIndex",
 ]

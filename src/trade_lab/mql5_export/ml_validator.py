@@ -4,6 +4,7 @@ Checks an MLStrategy object for compatibility with the ML MQL5 exporter
 before any code is generated. Reuses ``ValidationResult`` from the standard
 validator — the schema is identical, only the checks differ.
 """
+
 from __future__ import annotations
 
 from trade_lab.mql5_export.validators import ValidationResult
@@ -221,8 +222,8 @@ def validate_ml_strategy_onnx(strategy: object) -> "ValidationResult":
         import tf2onnx  # noqa: F401
     except ImportError:
         errors.append(
-            "tf2onnx is not installed. "
-            "Install it with:  pip install 'TradeLab[onnx]'"
+            "tf2onnx is not installed. Install it with:  pip install 'TradeLab[onnx]' "
+            "(Python 3.10-3.12)."
         )
 
     # 10. onnx available?
@@ -230,13 +231,14 @@ def validate_ml_strategy_onnx(strategy: object) -> "ValidationResult":
         import onnx  # noqa: F401
     except ImportError:
         errors.append(
-            "onnx is not installed. "
-            "Install it with:  pip install 'TradeLab[onnx]'"
+            "onnx is not installed. Install it with:  pip install 'TradeLab[onnx]' "
+            "(Python 3.10-3.12)."
         )
 
     # 11. Warn about Concatenate layers (Functional API models)
     if base_result.is_valid:
         from trade_lab.ml.models import KerasModelWrapper
+
         if isinstance(strategy.model, KerasModelWrapper):
             has_concatenate = any(
                 type(layer).__name__ == "Concatenate"

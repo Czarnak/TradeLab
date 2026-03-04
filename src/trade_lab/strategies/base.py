@@ -21,7 +21,7 @@ class BaseStrategy(ABC):
         allow_short: bool = True,
         position_sizer: Optional[BasePositionSizer] = None,
         entry_threshold: float = 0.5,
-        exit_threshold: float = 0.1
+        exit_threshold: float = 0.1,
     ):
         self.allow_long = allow_long
         self.allow_short = allow_short

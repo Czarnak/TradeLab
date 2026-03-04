@@ -85,11 +85,15 @@ For MQL5 export workflows (Jinja2 templates for `.mq5` generation):
 pip install -e ".[mql5]"
 ```
 
-For ONNX-based ML export workflows (Jinja2 + tf2onnx + onnx):
+For ONNX-based ML export workflows (TensorFlow/Keras + Jinja2 + tf2onnx + onnx, Python 3.10-3.12):
 
 ```bash
 pip install -e ".[onnx]"
 ```
+
+Note: on Python 3.13, ONNX export dependencies are not installable yet because
+`tf2onnx` currently requires `protobuf~=3.20` while TensorFlow 2.20+ requires
+`protobuf>=5.28.0`.
 
 ## Quick Start
 

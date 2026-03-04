@@ -9,6 +9,7 @@ import pandas as pd
 @dataclass
 class WalkForwardFold:
     """Index ranges for a single walk-forward fold."""
+
     train_idx: np.ndarray
     test_idx: np.ndarray
 
@@ -16,6 +17,7 @@ class WalkForwardFold:
 @dataclass
 class WalkForwardResult:
     """Outcome of training and evaluating one fold."""
+
     fold: int
     train_loss: float
     test_predictions: pd.Series
@@ -88,9 +90,11 @@ class WalkForwardSplit:
             else:
                 fold_train_start = max(0, test_start - train_size)
 
-            folds.append(WalkForwardFold(
-                train_idx=np.arange(fold_train_start, test_start),
-                test_idx=np.arange(test_start, test_end),
-            ))
+            folds.append(
+                WalkForwardFold(
+                    train_idx=np.arange(fold_train_start, test_start),
+                    test_idx=np.arange(test_start, test_end),
+                )
+            )
 
         return folds

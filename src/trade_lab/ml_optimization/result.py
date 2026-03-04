@@ -63,12 +63,12 @@ class MLOptimizationResult:
     metric: str
     direction: str
     trials_df: pd.DataFrame
-    study: 'optuna.Study'
+    study: "optuna.Study"
     best_model: Any  # keras.Model
-    best_feature_spec: list['BaseIndicator']
-    best_strategy: 'MLStrategy'
+    best_feature_spec: list["BaseIndicator"]
+    best_strategy: "MLStrategy"
     feature_names: list[str]
-    scaler: 'StandardScaler'
+    scaler: "StandardScaler"
     val_metrics: dict[str, float]
     train_df: pd.DataFrame
     test_metrics: dict[str, float] | None = None
@@ -95,10 +95,14 @@ class MLOptimizationResult:
             "  Validation metrics:",
         ]
         for k, v in self.val_metrics.items():
-            lines.append(f"    {k}: {v:.4f}" if isinstance(v, float) else f"    {k}: {v}")
+            lines.append(
+                f"    {k}: {v:.4f}" if isinstance(v, float) else f"    {k}: {v}"
+            )
         if self.test_metrics:
             lines.append("")
             lines.append("  Test metrics:")
             for k, v in self.test_metrics.items():
-                lines.append(f"    {k}: {v:.4f}" if isinstance(v, float) else f"    {k}: {v}")
+                lines.append(
+                    f"    {k}: {v:.4f}" if isinstance(v, float) else f"    {k}: {v}"
+                )
         return "\n".join(lines)

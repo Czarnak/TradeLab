@@ -3,6 +3,7 @@
 Describes how each upstream signal is computed in MQL5 and whether it
 requires persistent global state across ticks.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

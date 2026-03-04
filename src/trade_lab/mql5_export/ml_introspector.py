@@ -4,6 +4,7 @@ Produces an ``MLStrategyConfig`` dataclass that captures everything the Jinja2
 ML template needs to render a complete MQL5 Expert Advisor forward pass without
 any further Python-side logic.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

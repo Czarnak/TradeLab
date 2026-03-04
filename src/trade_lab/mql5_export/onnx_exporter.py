@@ -17,13 +17,14 @@ built-in ONNX runtime (opset 12+).
 Dependency note
 ---------------
 ``tf2onnx`` and ``onnx`` are *optional* dependencies included in the
-``[onnx]`` extra:
+``[onnx]`` extra (Python 3.10-3.12):
 
     pip install "TradeLab[onnx]"
 
 They are imported lazily inside the function so the rest of the package
 remains importable without them.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -73,7 +74,8 @@ def export_keras_to_onnx(
     except ImportError as exc:
         raise ImportError(
             "ONNX export requires tf2onnx. "
-            "Install it with:  pip install 'TradeLab[onnx]'"
+            "Install it with:  pip install 'TradeLab[onnx]' "
+            "(Python 3.10-3.12)."
         ) from exc
 
     try:
@@ -81,7 +83,8 @@ def export_keras_to_onnx(
     except ImportError as exc:
         raise ImportError(
             "ONNX export requires the onnx package. "
-            "Install it with:  pip install 'TradeLab[onnx]'"
+            "Install it with:  pip install 'TradeLab[onnx]' "
+            "(Python 3.10-3.12)."
         ) from exc
 
     # -------------------------------------------------------------------------

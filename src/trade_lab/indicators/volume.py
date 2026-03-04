@@ -10,6 +10,7 @@ OBV          On-Balance Volume (rate-of-change, normalised)
 ForceIndex   Elder's Force Index: volume × price change, smoothed
 CHO          Chaikin Oscillator: fast vs slow EMA of the AD line
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -61,8 +62,8 @@ class OBV(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        close = df['Close']
-        volume = df['Volume']
+        close = df["Close"]
+        volume = df["Volume"]
         # Direction of each bar (+1, -1, or 0)
         direction = np.sign(close.diff())
         # Cumulative OBV
@@ -81,21 +82,25 @@ class OBV(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col],
-            mode='lines', name='OBV ROC (normalised)',
-        ))
-        fig.add_hline(y=0, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="OBV ROC (normalised)",
+            )
+        )
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'OBV ROC({self.period})',
-            xaxis_title='Date',
-            yaxis_title='Normalised ROC',
+            title=f"OBV ROC({self.period})",
+            xaxis_title="Date",
+            yaxis_title="Normalised ROC",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__obv_roc_{self.period}']
+        return [f"indicator__obv_roc_{self.period}"]
 
 
 class ForceIndex(BaseIndicator):
@@ -134,9 +139,10 @@ class ForceIndex(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        raw_force = df['Volume'] * df['Close'].diff()
+        raw_force = df["Volume"] * df["Close"].diff()
         df[self._raw_output_columns[0]] = raw_force.ewm(
-            span=self.period, adjust=False,
+            span=self.period,
+            adjust=False,
         ).mean()
         return df
 
@@ -149,21 +155,25 @@ class ForceIndex(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col],
-            mode='lines', name='Force Index',
-        ))
-        fig.add_hline(y=0, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="Force Index",
+            )
+        )
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'Force Index({self.period})',
-            xaxis_title='Date',
-            yaxis_title='Force',
+            title=f"Force Index({self.period})",
+            xaxis_title="Date",
+            yaxis_title="Force",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__force_{self.period}']
+        return [f"indicator__force_{self.period}"]
 
 
 class CHO(BaseIndicator):
@@ -208,10 +218,10 @@ class CHO(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        high = df['High']
-        low = df['Low']
-        close = df['Close']
-        volume = df['Volume']
+        high = df["High"]
+        low = df["Low"]
+        close = df["Close"]
+        volume = df["Volume"]
 
         # Money Flow Multiplier: position of close within the high-low range
         hl_range = (high - low).replace(0, np.nan)
@@ -234,18 +244,22 @@ class CHO(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col],
-            mode='lines', name='CHO',
-        ))
-        fig.add_hline(y=0, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="CHO",
+            )
+        )
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'Chaikin Oscillator({self.fast_period},{self.slow_period})',
-            xaxis_title='Date',
-            yaxis_title='CHO',
+            title=f"Chaikin Oscillator({self.fast_period},{self.slow_period})",
+            xaxis_title="Date",
+            yaxis_title="CHO",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__cho_{self.fast_period}_{self.slow_period}']
+        return [f"indicator__cho_{self.fast_period}_{self.slow_period}"]

@@ -31,7 +31,7 @@ class FutureReturn(BaseTarget):
         ±10% move → ±0.76  target
     """
 
-    def __init__(self, periods: int = 5, column: str = 'Close', scale: float = 10.0):
+    def __init__(self, periods: int = 5, column: str = "Close", scale: float = 10.0):
         self.periods = periods
         self.column = column
         self.scale = scale
@@ -39,7 +39,9 @@ class FutureReturn(BaseTarget):
     def generate(self, df: pd.DataFrame) -> pd.Series:
         future = df[self.column].shift(-self.periods)
         log_return = np.log(future / df[self.column])
-        return pd.Series(np.tanh(log_return * self.scale), index=df.index, name='target')
+        return pd.Series(
+            np.tanh(log_return * self.scale), index=df.index, name="target"
+        )
 
 
 class DirectionalTarget(BaseTarget):
@@ -51,10 +53,12 @@ class DirectionalTarget(BaseTarget):
          0  unchanged (rare for real data)
     """
 
-    def __init__(self, periods: int = 5, column: str = 'Close'):
+    def __init__(self, periods: int = 5, column: str = "Close"):
         self.periods = periods
         self.column = column
 
     def generate(self, df: pd.DataFrame) -> pd.Series:
         future = df[self.column].shift(-self.periods)
-        return pd.Series(np.sign(future - df[self.column]), index=df.index, name='target')
+        return pd.Series(
+            np.sign(future - df[self.column]), index=df.index, name="target"
+        )

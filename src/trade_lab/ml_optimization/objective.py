@@ -84,10 +84,10 @@ def _serialize_specs(specs: list[tuple[type, int, int]]) -> str:
     """
     serializable = [
         {
-            'class_module': cls.__module__,
-            'class_name': cls.__name__,
-            'period': period,
-            'lag': lag,
+            "class_module": cls.__module__,
+            "class_name": cls.__name__,
+            "period": period,
+            "lag": lag,
         }
         for cls, period, lag in specs
     ]
@@ -112,9 +112,9 @@ def _deserialize_specs(raw: str) -> list[tuple[type, int, int]]:
     entries = json.loads(raw)
     result: list[tuple[type, int, int]] = []
     for entry in entries:
-        module = importlib.import_module(entry['class_module'])
-        cls = getattr(module, entry['class_name'])
-        result.append((cls, entry['period'], entry['lag']))
+        module = importlib.import_module(entry["class_module"])
+        cls = getattr(module, entry["class_name"])
+        result.append((cls, entry["period"], entry["lag"]))
     return result
 
 
@@ -192,18 +192,22 @@ class MLObjective:
         for spec in self.indicator_specs:
             if spec.optional:
                 include = trial.suggest_categorical(
-                    f'{spec.name}__include', [True, False],
+                    f"{spec.name}__include",
+                    [True, False],
                 )
             else:
                 include = True
 
             if include:
                 period = trial.suggest_int(
-                    f'{spec.name}__period', spec.period_low, spec.period_high,
+                    f"{spec.name}__period",
+                    spec.period_low,
+                    spec.period_high,
                 )
                 # Single lag sampled from the candidate list
                 lag = trial.suggest_categorical(
-                    f'{spec.name}__lag', spec.lag_values,
+                    f"{spec.name}__lag",
+                    spec.lag_values,
                 )
                 indicator = spec.indicator_class(period=period, lag=lag)
                 indicators.append(indicator)
@@ -211,7 +215,7 @@ class MLObjective:
 
         # Step 2 — Guard: at least one indicator required
         if not indicators:
-            raise optuna.TrialPruned('No indicators selected.')
+            raise optuna.TrialPruned("No indicators selected.")
 
         # Step 3 — Build feature matrices
         feature_matrix = FeatureMatrix(indicators)
@@ -219,7 +223,7 @@ class MLObjective:
         X_val, _ = feature_matrix.build(self.val_df, fit_scaler=False)
 
         if X_train.shape[0] == 0:
-            raise optuna.TrialPruned('No training samples after NaN dropping.')
+            raise optuna.TrialPruned("No training samples after NaN dropping.")
 
         # Step 4 — Build and train model
         n_features = X_train.shape[1]
@@ -227,9 +231,10 @@ class MLObjective:
 
         # Re-build val arrays for callback (already computed above)
         _, y_val_arr = feature_matrix.build(self.val_df, fit_scaler=False)
-        callbacks = [KerasPruningCallback(trial, monitor='val_loss')]
+        callbacks = [KerasPruningCallback(trial, monitor="val_loss")]
         model.fit(
-            X_train, y_train,
+            X_train,
+            y_train,
             validation_data=(X_val, y_val_arr),
             epochs=self.n_epochs,
             callbacks=callbacks,
@@ -249,10 +254,10 @@ class MLObjective:
         value = result.metrics.get(self.metric)
 
         if value is None or (isinstance(value, float) and np.isnan(value)):
-            raise optuna.TrialPruned(f'Metric {self.metric!r} is None or NaN.')
+            raise optuna.TrialPruned(f"Metric {self.metric!r} is None or NaN.")
 
         # Store artifacts for best-trial reconstruction
-        trial.set_user_attr('feature_names', feature_matrix.feature_names)
-        trial.set_user_attr('indicator_specs', _serialize_specs(included_specs))
+        trial.set_user_attr("feature_names", feature_matrix.feature_names)
+        trial.set_user_attr("indicator_specs", _serialize_specs(included_specs))
 
         return float(value)

@@ -4,6 +4,7 @@ Each entry describes how the corresponding Python indicator maps to MQL5
 built-in functions (or custom implementations), how many buffers are needed,
 and how the signal strength formula is expressed in MQL5.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -363,9 +364,7 @@ INDICATOR_REGISTRY: dict[type, MQL5IndicatorDescriptor] = {
         builtin_function=None,
         ma_method=None,
         n_buffers=0,
-        signal_strength_formula=(
-            "return MathTanh((26.75 - mi_value) / 1.5);"
-        ),
+        signal_strength_formula=("return MathTanh((26.75 - mi_value) / 1.5);"),
         applied_price_map=APPLIED_PRICE_MAP,
     ),
 }

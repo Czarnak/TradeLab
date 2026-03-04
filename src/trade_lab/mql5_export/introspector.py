@@ -4,6 +4,7 @@ Produces a ``StrategyConfig`` dataclass that captures everything the Jinja2
 templates need to render a complete MQL5 Expert Advisor without any further
 Python-side logic.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -43,13 +44,13 @@ _SIGNAL_TYPE_MAP: dict[type, str] = {
 # Display names for input prefix and function name generation
 # (base_input_prefix, base_function_name)
 _TYPE_DISPLAY_MAP: dict[str, tuple[str, str]] = {
-    "sma":           ("SMA", "SMA"),
-    "ema":           ("EMA", "EMA"),
-    "wma":           ("WMA", "WMA"),
-    "cma":           ("CMA", "CMA"),
-    "rsi":           ("RSI", "RSI"),
-    "macd":          ("MACD", "MACD"),
-    "momentum":      ("Momentum", "Momentum"),
+    "sma": ("SMA", "SMA"),
+    "ema": ("EMA", "EMA"),
+    "wma": ("WMA", "WMA"),
+    "cma": ("CMA", "CMA"),
+    "rsi": ("RSI", "RSI"),
+    "macd": ("MACD", "MACD"),
+    "momentum": ("Momentum", "Momentum"),
     "larry_williams": ("Larry_Williams", "LarryWilliams"),
 }
 
@@ -235,7 +236,7 @@ def _generate_var_names(
     for i, itype in enumerate(indicator_types):
         type_indices[itype].append(i)
 
-    var_names: list[str] = [''] * len(indicator_types)
+    var_names: list[str] = [""] * len(indicator_types)
 
     for itype, indices in type_indices.items():
         if len(indices) == 1:
@@ -243,7 +244,8 @@ def _generate_var_names(
         else:
             # Sort by primary period ascending
             sorted_indices = sorted(
-                indices, key=lambda i: _sort_key(indicator_params[i]),
+                indices,
+                key=lambda i: _sort_key(indicator_params[i]),
             )
             if len(sorted_indices) == 2:
                 var_names[sorted_indices[0]] = f"{itype}_fast"
@@ -270,8 +272,10 @@ def _make_input_prefix(var_name: str, indicator_type: str) -> str:
     >>> _make_input_prefix('larry_williams_fast', 'larry_williams')
     'Larry_Williams_Fast'
     """
-    base_input, _ = _TYPE_DISPLAY_MAP.get(indicator_type, (indicator_type.capitalize(), ""))
-    suffix = var_name[len(indicator_type):]  # '' or '_fast', '_1', ...
+    base_input, _ = _TYPE_DISPLAY_MAP.get(
+        indicator_type, (indicator_type.capitalize(), "")
+    )
+    suffix = var_name[len(indicator_type) :]  # '' or '_fast', '_1', ...
     if suffix:
         suffix_parts = suffix.lstrip("_").split("_")
         suffix_str = "_".join(p.capitalize() for p in suffix_parts if p)
@@ -291,8 +295,10 @@ def _make_function_name(var_name: str, indicator_type: str) -> str:
     >>> _make_function_name('larry_williams', 'larry_williams')
     'LarryWilliams'
     """
-    _, base_fn = _TYPE_DISPLAY_MAP.get(indicator_type, ("", indicator_type.capitalize()))
-    suffix = var_name[len(indicator_type):]
+    _, base_fn = _TYPE_DISPLAY_MAP.get(
+        indicator_type, ("", indicator_type.capitalize())
+    )
+    suffix = var_name[len(indicator_type) :]
     if suffix:
         suffix_parts = suffix.lstrip("_").split("_")
         suffix_str = "".join(p.capitalize() for p in suffix_parts if p)
@@ -352,7 +358,7 @@ class StrategyIntrospector:
                     var_name=var_name,
                     input_prefix=input_prefix,
                     function_name=function_name,
-                    lag=indicator.lag,          # <-- new: read from indicator
+                    lag=indicator.lag,  # <-- new: read from indicator
                 )
             )
 

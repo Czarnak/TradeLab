@@ -55,7 +55,8 @@ class MLTrainer:
     # ------------------------------------------------------------------
 
     def build_dataset(
-        self, df: pd.DataFrame,
+        self,
+        df: pd.DataFrame,
     ) -> tuple[np.ndarray, np.ndarray, list[str], pd.DatetimeIndex]:
         """Run the full feature pipeline and return clean arrays.
 
@@ -82,8 +83,7 @@ class MLTrainer:
     def _collect_feature_columns(df: pd.DataFrame) -> list[str]:
         """Discover feature columns using the naming convention."""
         return [
-            col for col in df.columns
-            if col.startswith(('signal__', 'indicator__'))
+            col for col in df.columns if col.startswith(("signal__", "indicator__"))
         ]
 
     # ------------------------------------------------------------------
@@ -120,7 +120,8 @@ class MLTrainer:
 
         model = self.model_builder(input_dim=X.shape[1])
         model.fit(
-            X_train, y_train,
+            X_train,
+            y_train,
             validation_data=(X_val, y_val),
             epochs=epochs,
             batch_size=batch_size,
@@ -182,21 +183,28 @@ class MLTrainer:
 
             model = self.model_builder(input_dim=X.shape[1])
             history = model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 epochs=epochs,
                 batch_size=batch_size,
                 verbose=verbose,
             )
 
             preds = model.predict(X_test, verbose=0).flatten()
-            train_loss = history.history['loss'][-1]
+            train_loss = history.history["loss"][-1]
 
-            results.append(WalkForwardResult(
-                fold=i,
-                train_loss=train_loss,
-                test_predictions=pd.Series(preds, index=index[fold.test_idx], name='prediction'),
-                test_targets=pd.Series(y_test, index=index[fold.test_idx], name='target'),
-                model=KerasModelWrapper(model, feature_columns),
-            ))
+            results.append(
+                WalkForwardResult(
+                    fold=i,
+                    train_loss=train_loss,
+                    test_predictions=pd.Series(
+                        preds, index=index[fold.test_idx], name="prediction"
+                    ),
+                    test_targets=pd.Series(
+                        y_test, index=index[fold.test_idx], name="target"
+                    ),
+                    model=KerasModelWrapper(model, feature_columns),
+                )
+            )
 
         return results

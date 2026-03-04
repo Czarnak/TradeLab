@@ -17,6 +17,7 @@ from trade_lab.monte_carlo.generators import BaseGenerator
 # tqdm is an optional dependency — progress display degrades gracefully if absent.
 try:
     from tqdm import tqdm as _tqdm
+
     _TQDM_AVAILABLE = True
 except ImportError:
     _TQDM_AVAILABLE = False
@@ -39,7 +40,7 @@ class MonteCarloResult:
 
     n_simulations: int
     metric_series: dict[str, list[float]] = field(default_factory=dict)
-    generator_name: str = ''
+    generator_name: str = ""
 
 
 class MonteCarloRunner:
@@ -131,7 +132,7 @@ class MonteCarloRunner:
             for key, value in selected.items():
                 seen_keys.add(key)
                 metric_series.setdefault(key, []).append(
-                    float(value) if value is not None else float('nan')
+                    float(value) if value is not None else float("nan")
                 )
 
         return MonteCarloResult(
@@ -210,17 +211,19 @@ class MonteCarloRunner:
             return backtest_result.metrics
         except Exception as exc:
             import sys
+
             print(
                 f"[MonteCarloRunner] simulation {simulation_index} failed "
                 f"({type(exc).__name__}: {exc}) — recording NaN for all metrics.",
                 file=sys.stderr,
             )
-            return {key: float('nan') for key in seen_keys}
+            return {key: float("nan") for key in seen_keys}
 
 
 # ---------------------------------------------------------------------------
 # Fallback progress reporter (no tqdm dependency)
 # ---------------------------------------------------------------------------
+
 
 class _FallbackProgress:
     """Minimal progress reporter used when tqdm is not installed.

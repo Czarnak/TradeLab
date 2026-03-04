@@ -108,7 +108,7 @@ class MonteCarloAnalysis:
         """
         arr = self._get_finite(metric)
         if len(arr) == 0:
-            return float('nan'), float('nan')
+            return float("nan"), float("nan")
         return float(np.percentile(arr, lower)), float(np.percentile(arr, upper))
 
     def percentile_of(self, metric: str, value: float) -> float:
@@ -145,7 +145,7 @@ class MonteCarloAnalysis:
         """
         arr = self._get_finite(metric)
         if len(arr) == 0:
-            return float('nan')
+            return float("nan")
         return float(np.mean(arr <= value) * 100)
 
     def available_metrics(self) -> list[str]:
@@ -178,23 +178,23 @@ class MonteCarloAnalysis:
         n_nan = int(np.sum(~np.isfinite(arr)))
 
         if len(finite) == 0:
-            row: dict = {'mean': float('nan'), 'std': float('nan'), 'min': float('nan')}
+            row: dict = {"mean": float("nan"), "std": float("nan"), "min": float("nan")}
             for p in percentiles:
-                row[f'p{int(p)}'] = float('nan')
-            row['max'] = float('nan')
-            row['n_valid'] = 0
-            row['n_nan'] = n_nan
+                row[f"p{int(p)}"] = float("nan")
+            row["max"] = float("nan")
+            row["n_valid"] = 0
+            row["n_nan"] = n_nan
             return row
 
         row = {
-            'mean': float(np.mean(finite)),
-            'std': float(np.std(finite)),
-            'min': float(np.min(finite)),
+            "mean": float(np.mean(finite)),
+            "std": float(np.std(finite)),
+            "min": float(np.min(finite)),
         }
         for p in percentiles:
-            row[f'p{int(p)}'] = float(np.percentile(finite, p))
-        row['max'] = float(np.max(finite))
-        row['n_valid'] = len(finite)
-        row['n_nan'] = n_nan
+            row[f"p{int(p)}"] = float(np.percentile(finite, p))
+        row["max"] = float(np.max(finite))
+        row["n_valid"] = len(finite)
+        row["n_nan"] = n_nan
 
         return row

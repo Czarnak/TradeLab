@@ -26,7 +26,7 @@ classifiers = [
 ]
 dependencies = [
     "pandas>=3.0.1",
-    "numpy>=1.25",
+    "numpy>=2.4.2",
     "yfinance>=1.2.0",
     "matplotlib>=3.7",
     "scipy>=1.17.1",
@@ -36,7 +36,8 @@ dependencies = [
 
 [project.optional-dependencies]
 ml = [
-    "tensorflow>=2.20.0",
+    "tensorflow>=2.16,<2.20; python_version<'3.13'",
+    "tensorflow>=2.20.0; python_version>='3.13'",
     "keras>=3.13",
     "optuna-integration[keras]>=4.5",
     "scikit-learn>=1.8",
@@ -46,8 +47,10 @@ mql5 = [
 ]
 onnx = [
     "Jinja2>=3.1",
-    "tf2onnx>=1.16",
-    "onnx>=1.15",
+    "tensorflow>=2.16,<2.20; python_version<'3.13'",
+    "keras>=3.13; python_version<'3.13'",
+    "tf2onnx>=1.16,<1.17; python_version<'3.13'",
+    "onnx>=1.16,<1.18; python_version<'3.13'",
 ]
 dev = [
     "pytest>=7.0",

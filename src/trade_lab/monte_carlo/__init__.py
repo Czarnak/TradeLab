@@ -57,12 +57,12 @@ from trade_lab.monte_carlo.runner import MonteCarloRunner, MonteCarloResult
 from trade_lab.monte_carlo.analysis import MonteCarloAnalysis
 
 __all__ = [
-    'BaseGenerator',
-    'ReturnShuffler',
-    'BlockBootstrap',
-    'CircularBlockBootstrap',
-    'GBMSimulator',
-    'MonteCarloRunner',
-    'MonteCarloResult',
-    'MonteCarloAnalysis',
+    "BaseGenerator",
+    "ReturnShuffler",
+    "BlockBootstrap",
+    "CircularBlockBootstrap",
+    "GBMSimulator",
+    "MonteCarloRunner",
+    "MonteCarloResult",
+    "MonteCarloAnalysis",
 ]

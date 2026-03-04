@@ -45,8 +45,8 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Metrics where a lower value is better. All others default to 'maximize'.
 _MINIMIZE_METRICS = {
-    'annual_volatility',
-    'total_commission',
+    "annual_volatility",
+    "total_commission",
 }
 
 
@@ -63,7 +63,7 @@ def _infer_direction(metric: str) -> str:
     str
         ``'minimize'`` or ``'maximize'``.
     """
-    return 'minimize' if metric in _MINIMIZE_METRICS else 'maximize'
+    return "minimize" if metric in _MINIMIZE_METRICS else "maximize"
 
 
 class OptunaOptimizer:
@@ -152,7 +152,7 @@ class OptunaOptimizer:
         strategy_factory: StrategyFactory,
         param_space: ParamSpace,
         train_df: pd.DataFrame,
-        metric: str = 'sharpe_ratio',
+        metric: str = "sharpe_ratio",
         val_df: pd.DataFrame | None = None,
         n_trials: int = 100,
         n_jobs: int = 1,
@@ -227,9 +227,9 @@ class OptunaOptimizer:
     def _engine_kwargs(self) -> dict[str, Any]:
         """Engine configuration shared across all trials."""
         return {
-            'initial_capital': self.initial_capital,
-            'commission': self.commission,
-            'slippage': self.slippage,
+            "initial_capital": self.initial_capital,
+            "commission": self.commission,
+            "slippage": self.slippage,
         }
 
     def _build_storage(self) -> str | None:
@@ -253,10 +253,10 @@ class OptunaOptimizer:
         if self.storage_path is not None:
             db_path = self.storage_path
         else:
-            os.makedirs('optuna_studies', exist_ok=True)
-            db_path = os.path.join('optuna_studies', f'{self.study_name}.db')
+            os.makedirs("optuna_studies", exist_ok=True)
+            db_path = os.path.join("optuna_studies", f"{self.study_name}.db")
 
-        return f'sqlite:///{db_path}'
+        return f"sqlite:///{db_path}"
 
     def _build_result(self, study: optuna.Study) -> OptimizationResult:
         """Compile the final OptimizationResult from a completed study.
@@ -296,12 +296,13 @@ class OptunaOptimizer:
 
         # --- Trial counts ---
         completed = sum(
-            1 for t in study.trials
-            if t.state == optuna.trial.TrialState.COMPLETE
+            1 for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
         )
         failed = sum(
-            1 for t in study.trials
-            if t.state in (
+            1
+            for t in study.trials
+            if t.state
+            in (
                 optuna.trial.TrialState.FAIL,
                 optuna.trial.TrialState.PRUNED,
             )
@@ -366,10 +367,10 @@ class OptunaOptimizer:
         rows = []
         for trial in study.trials:
             row: dict[str, Any] = {
-                'trial_number': trial.number,
-                'value': trial.value,
-                'state': trial.state.name,
-                'duration_s': (
+                "trial_number": trial.number,
+                "value": trial.value,
+                "state": trial.state.name,
+                "duration_s": (
                     trial.duration.total_seconds()
                     if trial.duration is not None
                     else None
@@ -381,4 +382,4 @@ class OptunaOptimizer:
         if not rows:
             return pd.DataFrame()
 
-        return pd.DataFrame(rows).sort_values('trial_number').reset_index(drop=True)
+        return pd.DataFrame(rows).sort_values("trial_number").reset_index(drop=True)

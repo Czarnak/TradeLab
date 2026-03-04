@@ -16,12 +16,7 @@ class MLStrategy(BaseStrategy):
         following the established naming convention.
     """
 
-    def __init__(
-        self,
-        model,
-        indicators: list[BaseIndicator],
-        **kwargs
-    ):
+    def __init__(self, model, indicators: list[BaseIndicator], **kwargs):
         super().__init__(**kwargs)
         self.model = model
         self.indicators = indicators
@@ -34,5 +29,5 @@ class MLStrategy(BaseStrategy):
         for indicator in self.indicators:
             df = indicator.compute(df)
         features = self._build_feature_matrix(df)
-        df['signal_strength'] = self.model.predict(features)
+        df["signal_strength"] = self.model.predict(features)
         return df

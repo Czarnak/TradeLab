@@ -36,11 +36,11 @@ class CyclicalTemporalSignal(BaseSignal):
     """
 
     EXTRACTORS: dict = {
-        'hour':         lambda idx: idx.hour,
-        'day_of_week':  lambda idx: idx.dayofweek,
-        'day_of_month': lambda idx: idx.day,
-        'month':        lambda idx: idx.month,
-        'day_of_year':  lambda idx: idx.dayofyear,
+        "hour": lambda idx: idx.hour,
+        "day_of_week": lambda idx: idx.dayofweek,
+        "day_of_month": lambda idx: idx.day,
+        "month": lambda idx: idx.month,
+        "day_of_year": lambda idx: idx.dayofyear,
     }
 
     def __init__(self, component: str, period: float, lag: int = 0) -> None:
@@ -66,16 +66,26 @@ class CyclicalTemporalSignal(BaseSignal):
     def plot(self, df: pd.DataFrame) -> None:
         sin_col, cos_col = self.output_columns
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[sin_col], mode='lines', name=sin_col,
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[cos_col], mode='lines', name=cos_col,
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[sin_col],
+                mode="lines",
+                name=sin_col,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[cos_col],
+                mode="lines",
+                name=cos_col,
+            )
+        )
         fig.update_layout(
-            title=f'Cyclical {self.component} (period={self.period})',
-            xaxis_title='Date',
-            yaxis_title='Value',
+            title=f"Cyclical {self.component} (period={self.period})",
+            xaxis_title="Date",
+            yaxis_title="Value",
         )
         fig.show()
 

@@ -6,6 +6,7 @@ ADX          Average Directional Index — directional trend strength
 ATR          Average True Range — volatility (utility, no signal strength)
 MassIndex    Mass Index — volatility expansion / reversal alert
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -58,20 +59,23 @@ class ADX(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        high = df['High']
-        low = df['Low']
-        close = df['Close']
+        high = df["High"]
+        low = df["Low"]
+        close = df["Close"]
 
         prev_high = high.shift(1)
         prev_low = low.shift(1)
         prev_close = close.shift(1)
 
         # --- True Range ---
-        tr = pd.concat([
-            high - low,
-            (high - prev_close).abs(),
-            (low - prev_close).abs(),
-        ], axis=1).max(axis=1)
+        tr = pd.concat(
+            [
+                high - low,
+                (high - prev_close).abs(),
+                (low - prev_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
 
         # --- Directional Movement ---
         # +DM: today's high exceeded yesterday's high and by more than -DM
@@ -122,33 +126,48 @@ class ADX(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         adx_col, plus_di_col, minus_di_col = self.output_columns
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[adx_col],
-            mode='lines', name='ADX',
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[plus_di_col],
-            mode='lines', name='+DI', line=dict(dash='dash', color='green'),
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[minus_di_col],
-            mode='lines', name='-DI', line=dict(dash='dash', color='red'),
-        ))
-        fig.add_hline(y=25, line_dash='dot', line_color='gray',
-                      annotation_text='Trend threshold')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[adx_col],
+                mode="lines",
+                name="ADX",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[plus_di_col],
+                mode="lines",
+                name="+DI",
+                line=dict(dash="dash", color="green"),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[minus_di_col],
+                mode="lines",
+                name="-DI",
+                line=dict(dash="dash", color="red"),
+            )
+        )
+        fig.add_hline(
+            y=25, line_dash="dot", line_color="gray", annotation_text="Trend threshold"
+        )
         fig.update_layout(
-            title=f'ADX({self.period})',
-            xaxis_title='Date',
-            yaxis_title='Value',
+            title=f"ADX({self.period})",
+            xaxis_title="Date",
+            yaxis_title="Value",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
         return [
-            f'indicator__adx_{self.period}',
-            f'indicator__adx_plus_di_{self.period}',
-            f'indicator__adx_minus_di_{self.period}',
+            f"indicator__adx_{self.period}",
+            f"indicator__adx_plus_di_{self.period}",
+            f"indicator__adx_minus_di_{self.period}",
         ]
 
 
@@ -196,19 +215,23 @@ class ATR(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        high = df['High']
-        low = df['Low']
-        prev_close = df['Close'].shift(1)
+        high = df["High"]
+        low = df["Low"]
+        prev_close = df["Close"].shift(1)
 
-        tr = pd.concat([
-            high - low,
-            (high - prev_close).abs(),
-            (low - prev_close).abs(),
-        ], axis=1).max(axis=1)
+        tr = pd.concat(
+            [
+                high - low,
+                (high - prev_close).abs(),
+                (low - prev_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
 
         # Wilder smoothing: alpha = 1/period
         df[self._raw_output_columns[0]] = tr.ewm(
-            alpha=1.0 / self.period, adjust=False,
+            alpha=1.0 / self.period,
+            adjust=False,
         ).mean()
         return df
 
@@ -223,20 +246,24 @@ class ATR(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col],
-            mode='lines', name='ATR',
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="ATR",
+            )
+        )
         fig.update_layout(
-            title=f'ATR({self.period})',
-            xaxis_title='Date',
-            yaxis_title='ATR',
+            title=f"ATR({self.period})",
+            xaxis_title="Date",
+            yaxis_title="ATR",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__atr_{self.period}']
+        return [f"indicator__atr_{self.period}"]
 
 
 class MassIndex(BaseIndicator):
@@ -294,7 +321,7 @@ class MassIndex(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        hl = df['High'] - df['Low']
+        hl = df["High"] - df["Low"]
         ema1 = hl.ewm(span=self.ema_period, adjust=False).mean()
         ema2 = ema1.ewm(span=self.ema_period, adjust=False).mean()
         ratio = ema1 / ema2.replace(0, np.nan)
@@ -311,21 +338,33 @@ class MassIndex(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col],
-            mode='lines', name='Mass Index',
-        ))
-        fig.add_hline(y=27.0, line_dash='dash', line_color='red',
-                      annotation_text='Bulge upper (27)')
-        fig.add_hline(y=26.5, line_dash='dash', line_color='orange',
-                      annotation_text='Bulge lower (26.5)')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="Mass Index",
+            )
+        )
+        fig.add_hline(
+            y=27.0,
+            line_dash="dash",
+            line_color="red",
+            annotation_text="Bulge upper (27)",
+        )
+        fig.add_hline(
+            y=26.5,
+            line_dash="dash",
+            line_color="orange",
+            annotation_text="Bulge lower (26.5)",
+        )
         fig.update_layout(
-            title=f'Mass Index({self.ema_period},{self.sum_period})',
-            xaxis_title='Date',
-            yaxis_title='Mass Index',
+            title=f"Mass Index({self.ema_period},{self.sum_period})",
+            xaxis_title="Date",
+            yaxis_title="Mass Index",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__mi_{self.ema_period}_{self.sum_period}']
+        return [f"indicator__mi_{self.ema_period}_{self.sum_period}"]

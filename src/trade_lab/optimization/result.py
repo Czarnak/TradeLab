@@ -53,7 +53,7 @@ class OptimizationResult:
     metric: str
     direction: str
     trials_df: pd.DataFrame
-    study: 'optuna.Study'
+    study: "optuna.Study"
     train_metrics: dict[str, float]
     val_metrics: dict[str, float] | None = None
     n_trials_completed: int = 0
@@ -82,7 +82,7 @@ class OptimizationResult:
             lines.append(f"    {k:<30} {v}")
 
         if self.val_metrics is not None:
-            val_val = self.val_metrics.get(self.metric, float('nan'))
+            val_val = self.val_metrics.get(self.metric, float("nan"))
             lines += [
                 "",
                 f"  Validation {self.metric:<22} {val_val:.4f}",

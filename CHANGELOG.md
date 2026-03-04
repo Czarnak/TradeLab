@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [0.7.1] - 2026-03-03
+
+### Added
+
+- `ExternalSignal` (`src/trade_lab/signals/external.py`): wraps an existing
+  DataFrame column as a `BaseIndicator`, exposing it through the standard
+  `indicator__<name>__lag_0` naming convention. Supports optional normalization
+  callable and lag. Automatically discoverable by `FeatureMatrix`. Compatible
+  with `MLStrategy.indicators` — eliminates the need to subclass `MLStrategy`
+  for multi-source feature pipelines (VIX, FED rates, commodity prices, etc.).
+  Not compatible with `StandardStrategy` (`to_signal_strength` raises
+  `NotImplementedError`).
+
 ## [0.7.0] - 2026-02-28
 
 ### Added

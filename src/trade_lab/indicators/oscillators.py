@@ -36,7 +36,7 @@ class RSI(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 14,
         lag: int = 0,
     ) -> None:
@@ -52,10 +52,14 @@ class RSI(BaseIndicator):
         loss = -delta.clip(upper=0)
 
         avg_gain = gain.ewm(
-            alpha=1 / self.period, min_periods=self.period, adjust=False,
+            alpha=1 / self.period,
+            min_periods=self.period,
+            adjust=False,
         ).mean()
         avg_loss = loss.ewm(
-            alpha=1 / self.period, min_periods=self.period, adjust=False,
+            alpha=1 / self.period,
+            min_periods=self.period,
+            adjust=False,
         ).mean()
 
         rs = avg_gain / avg_loss.replace(0, np.nan)
@@ -71,25 +75,32 @@ class RSI(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col], mode='lines', name=col,
-        ))
-        fig.add_hline(y=70, line_dash='dash', line_color='red',
-                      annotation_text='Overbought')
-        fig.add_hline(y=30, line_dash='dash', line_color='green',
-                      annotation_text='Oversold')
-        fig.add_hline(y=50, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name=col,
+            )
+        )
+        fig.add_hline(
+            y=70, line_dash="dash", line_color="red", annotation_text="Overbought"
+        )
+        fig.add_hline(
+            y=30, line_dash="dash", line_color="green", annotation_text="Oversold"
+        )
+        fig.add_hline(y=50, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'RSI({self.period})',
-            xaxis_title='Date',
-            yaxis_title='RSI',
+            title=f"RSI({self.period})",
+            xaxis_title="Date",
+            yaxis_title="RSI",
             yaxis=dict(range=[0, 100]),
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__rsi_{self.period}']
+        return [f"indicator__rsi_{self.period}"]
 
 
 class MACD(BaseIndicator):
@@ -119,7 +130,7 @@ class MACD(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         fast_period: int = 12,
         slow_period: int = 26,
         lag: int = 0,
@@ -146,20 +157,30 @@ class MACD(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         macd_col, signal_col = self.output_columns
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[macd_col], mode='lines', name='MACD',
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[signal_col], mode='lines', name='Signal',
-        ))
-        fig.update_layout(title='MACD')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[macd_col],
+                mode="lines",
+                name="MACD",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[signal_col],
+                mode="lines",
+                name="Signal",
+            )
+        )
+        fig.update_layout(title="MACD")
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
         return [
-            f'indicator__macd_{self.fast_period}_{self.slow_period}',
-            f'indicator__macd_signal_{self.fast_period}_{self.slow_period}',
+            f"indicator__macd_{self.fast_period}_{self.slow_period}",
+            f"indicator__macd_signal_{self.fast_period}_{self.slow_period}",
         ]
 
 
@@ -184,7 +205,7 @@ class Momentum(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 14,
         lag: int = 0,
     ) -> None:
@@ -203,15 +224,20 @@ class Momentum(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col], mode='lines', name='Momentum',
-        ))
-        fig.update_layout(title=f'Momentum({self.period})')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="Momentum",
+            )
+        )
+        fig.update_layout(title=f"Momentum({self.period})")
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__momentum_{self.period}']
+        return [f"indicator__momentum_{self.period}"]
 
 
 class LarryWilliams(BaseIndicator):
@@ -242,7 +268,7 @@ class LarryWilliams(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 14,
         lag: int = 0,
     ) -> None:
@@ -252,8 +278,8 @@ class LarryWilliams(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        highest_high = df['High'].rolling(self.period).max()
-        lowest_low = df['Low'].rolling(self.period).min()
+        highest_high = df["High"].rolling(self.period).max()
+        lowest_low = df["Low"].rolling(self.period).min()
         denominator = (highest_high - lowest_low).replace(0, np.nan)
         df[self._raw_output_columns[0]] = (
             (highest_high - df[self.column]) / denominator * -100
@@ -267,24 +293,31 @@ class LarryWilliams(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col], mode='lines', name='LW%R',
-        ))
-        fig.add_hline(y=-20, line_dash='dash', line_color='red',
-                      annotation_text='Overbought')
-        fig.add_hline(y=-80, line_dash='dash', line_color='green',
-                      annotation_text='Oversold')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="LW%R",
+            )
+        )
+        fig.add_hline(
+            y=-20, line_dash="dash", line_color="red", annotation_text="Overbought"
+        )
+        fig.add_hline(
+            y=-80, line_dash="dash", line_color="green", annotation_text="Oversold"
+        )
         fig.update_layout(
-            title=f'Larry Williams %R({self.period})',
-            xaxis_title='Date',
-            yaxis_title='%R',
+            title=f"Larry Williams %R({self.period})",
+            xaxis_title="Date",
+            yaxis_title="%R",
             yaxis=dict(range=[-100, 0]),
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__lw_{self.period}']
+        return [f"indicator__lw_{self.period}"]
 
 
 class BollingerBands(BaseIndicator):
@@ -319,7 +352,7 @@ class BollingerBands(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         num_deviations: float = 2.0,
         lag: int = 0,
@@ -353,36 +386,55 @@ class BollingerBands(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         upper_col, middle_col, lower_col = self.output_columns
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[self.column],
-            mode='lines', name=self.column,
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[upper_col],
-            mode='lines', name='Upper', line=dict(dash='dash'),
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[middle_col],
-            mode='lines', name='Middle',
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[lower_col],
-            mode='lines', name='Lower', line=dict(dash='dash'),
-            fill='tonexty', fillcolor='rgba(100,149,237,0.1)',
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[self.column],
+                mode="lines",
+                name=self.column,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[upper_col],
+                mode="lines",
+                name="Upper",
+                line=dict(dash="dash"),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[middle_col],
+                mode="lines",
+                name="Middle",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[lower_col],
+                mode="lines",
+                name="Lower",
+                line=dict(dash="dash"),
+                fill="tonexty",
+                fillcolor="rgba(100,149,237,0.1)",
+            )
+        )
         fig.update_layout(
-            title=f'Bollinger Bands({self.period}, {self.num_deviations})',
-            xaxis_title='Date',
-            yaxis_title='Price',
+            title=f"Bollinger Bands({self.period}, {self.num_deviations})",
+            xaxis_title="Date",
+            yaxis_title="Price",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
         return [
-            f'indicator__bb_upper_{self.period}',
-            f'indicator__bb_middle_{self.period}',
-            f'indicator__bb_lower_{self.period}',
+            f"indicator__bb_upper_{self.period}",
+            f"indicator__bb_middle_{self.period}",
+            f"indicator__bb_lower_{self.period}",
         ]
 
 
@@ -424,7 +476,7 @@ class CCI(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        typical = (df['High'] + df['Low'] + df['Close']) / 3.0
+        typical = (df["High"] + df["Low"] + df["Close"]) / 3.0
         sma = typical.rolling(self.period).mean()
         # Mean absolute deviation of typical price from its SMA
         mean_dev = typical.rolling(self.period).apply(
@@ -442,24 +494,31 @@ class CCI(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col], mode='lines', name='CCI',
-        ))
-        fig.add_hline(y=100, line_dash='dash', line_color='red',
-                      annotation_text='Overbought')
-        fig.add_hline(y=-100, line_dash='dash', line_color='green',
-                      annotation_text='Oversold')
-        fig.add_hline(y=0, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="CCI",
+            )
+        )
+        fig.add_hline(
+            y=100, line_dash="dash", line_color="red", annotation_text="Overbought"
+        )
+        fig.add_hline(
+            y=-100, line_dash="dash", line_color="green", annotation_text="Oversold"
+        )
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'CCI({self.period})',
-            xaxis_title='Date',
-            yaxis_title='CCI',
+            title=f"CCI({self.period})",
+            xaxis_title="Date",
+            yaxis_title="CCI",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__cci_{self.period}']
+        return [f"indicator__cci_{self.period}"]
 
 
 class Stochastic(BaseIndicator):
@@ -507,11 +566,11 @@ class Stochastic(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        highest_high = df['High'].rolling(self.k_period).max()
-        lowest_low = df['Low'].rolling(self.k_period).min()
+        highest_high = df["High"].rolling(self.k_period).max()
+        lowest_low = df["Low"].rolling(self.k_period).min()
         denom = (highest_high - lowest_low).replace(0, np.nan)
         # Raw %K
-        raw_k = 100.0 * (df['Close'] - lowest_low) / denom
+        raw_k = 100.0 * (df["Close"] - lowest_low) / denom
         # Apply slowing: SMA of raw_k over `slowing` bars
         k_col, d_col = self._raw_output_columns
         df[k_col] = raw_k.rolling(self.slowing).mean()
@@ -527,21 +586,33 @@ class Stochastic(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         k_col, d_col = self.output_columns
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[k_col], mode='lines', name='%K',
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[d_col], mode='lines', name='%D',
-            line=dict(dash='dot'),
-        ))
-        fig.add_hline(y=80, line_dash='dash', line_color='red',
-                      annotation_text='Overbought')
-        fig.add_hline(y=20, line_dash='dash', line_color='green',
-                      annotation_text='Oversold')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[k_col],
+                mode="lines",
+                name="%K",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[d_col],
+                mode="lines",
+                name="%D",
+                line=dict(dash="dot"),
+            )
+        )
+        fig.add_hline(
+            y=80, line_dash="dash", line_color="red", annotation_text="Overbought"
+        )
+        fig.add_hline(
+            y=20, line_dash="dash", line_color="green", annotation_text="Oversold"
+        )
         fig.update_layout(
-            title=f'Stochastic({self.k_period},{self.d_period},{self.slowing})',
-            xaxis_title='Date',
-            yaxis_title='%',
+            title=f"Stochastic({self.k_period},{self.d_period},{self.slowing})",
+            xaxis_title="Date",
+            yaxis_title="%",
             yaxis=dict(range=[0, 100]),
         )
         fig.show()
@@ -549,8 +620,8 @@ class Stochastic(BaseIndicator):
     @property
     def _raw_output_columns(self) -> list[str]:
         return [
-            f'indicator__stoch_k_{self.k_period}',
-            f'indicator__stoch_d_{self.k_period}',
+            f"indicator__stoch_k_{self.k_period}",
+            f"indicator__stoch_d_{self.k_period}",
         ]
 
 
@@ -583,7 +654,7 @@ class ROC(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 12,
         lag: int = 0,
     ) -> None:
@@ -607,20 +678,25 @@ class ROC(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col], mode='lines', name='ROC',
-        ))
-        fig.add_hline(y=0, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="ROC",
+            )
+        )
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'ROC({self.period})',
-            xaxis_title='Date',
-            yaxis_title='ROC (%)',
+            title=f"ROC({self.period})",
+            xaxis_title="Date",
+            yaxis_title="ROC (%)",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__roc_{self.period}']
+        return [f"indicator__roc_{self.period}"]
 
 
 class TRIX(BaseIndicator):
@@ -657,7 +733,7 @@ class TRIX(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 14,
         lag: int = 0,
     ) -> None:
@@ -683,20 +759,25 @@ class TRIX(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col], mode='lines', name='TRIX',
-        ))
-        fig.add_hline(y=0, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="TRIX",
+            )
+        )
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'TRIX({self.period})',
-            xaxis_title='Date',
-            yaxis_title='TRIX (%)',
+            title=f"TRIX({self.period})",
+            xaxis_title="Date",
+            yaxis_title="TRIX (%)",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__trix_{self.period}']
+        return [f"indicator__trix_{self.period}"]
 
 
 class DPO(BaseIndicator):
@@ -731,7 +812,7 @@ class DPO(BaseIndicator):
     def __init__(
         self,
         *signals: BaseSignal,
-        column: str = 'Close',
+        column: str = "Close",
         period: int = 20,
         lag: int = 0,
     ) -> None:
@@ -756,20 +837,25 @@ class DPO(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col], mode='lines', name='DPO',
-        ))
-        fig.add_hline(y=0, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="DPO",
+            )
+        )
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'DPO({self.period})',
-            xaxis_title='Date',
-            yaxis_title='DPO',
+            title=f"DPO({self.period})",
+            xaxis_title="Date",
+            yaxis_title="DPO",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__dpo_{self.period}']
+        return [f"indicator__dpo_{self.period}"]
 
 
 class RVI(BaseIndicator):
@@ -813,8 +899,8 @@ class RVI(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        co = df['Close'] - df['Open']
-        hl = df['High'] - df['Low']
+        co = df["Close"] - df["Open"]
+        hl = df["High"] - df["Low"]
         # Triangular 4-bar smoothing (weights 1,2,2,1 → sum=6)
         co_smooth = (co + 2 * co.shift(1) + 2 * co.shift(2) + co.shift(3)) / 6.0
         hl_smooth = (hl + 2 * hl.shift(1) + 2 * hl.shift(2) + hl.shift(3)) / 6.0
@@ -837,26 +923,36 @@ class RVI(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         rvi_col, signal_col = self.output_columns
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[rvi_col], mode='lines', name='RVI',
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[signal_col], mode='lines', name='Signal',
-            line=dict(dash='dot'),
-        ))
-        fig.add_hline(y=0, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[rvi_col],
+                mode="lines",
+                name="RVI",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[signal_col],
+                mode="lines",
+                name="Signal",
+                line=dict(dash="dot"),
+            )
+        )
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'RVI({self.period})',
-            xaxis_title='Date',
-            yaxis_title='RVI',
+            title=f"RVI({self.period})",
+            xaxis_title="Date",
+            yaxis_title="RVI",
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
         return [
-            f'indicator__rvi_{self.period}',
-            f'indicator__rvi_signal_{self.period}',
+            f"indicator__rvi_{self.period}",
+            f"indicator__rvi_signal_{self.period}",
         ]
 
 
@@ -896,8 +992,8 @@ class DeMarker(BaseIndicator):
 
     def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.get_data(df)
-        de_max = (df['High'] - df['High'].shift(1)).clip(lower=0)
-        de_min = (df['Low'].shift(1) - df['Low']).clip(lower=0)
+        de_max = (df["High"] - df["High"].shift(1)).clip(lower=0)
+        de_min = (df["Low"].shift(1) - df["Low"]).clip(lower=0)
         avg_de_max = de_max.rolling(self.period).mean()
         avg_de_min = de_min.rolling(self.period).mean()
         denom = (avg_de_max + avg_de_min).replace(0, np.nan)
@@ -911,22 +1007,29 @@ class DeMarker(BaseIndicator):
     def plot(self, df: pd.DataFrame, ax=None) -> None:
         col = self.output_columns[0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df.index.to_numpy(), y=df[col], mode='lines', name='DeMarker',
-        ))
-        fig.add_hline(y=0.7, line_dash='dash', line_color='red',
-                      annotation_text='Overbought')
-        fig.add_hline(y=0.3, line_dash='dash', line_color='green',
-                      annotation_text='Oversold')
-        fig.add_hline(y=0.5, line_dash='dot', line_color='gray')
+        fig.add_trace(
+            go.Scatter(
+                x=df.index.to_numpy(),
+                y=df[col],
+                mode="lines",
+                name="DeMarker",
+            )
+        )
+        fig.add_hline(
+            y=0.7, line_dash="dash", line_color="red", annotation_text="Overbought"
+        )
+        fig.add_hline(
+            y=0.3, line_dash="dash", line_color="green", annotation_text="Oversold"
+        )
+        fig.add_hline(y=0.5, line_dash="dot", line_color="gray")
         fig.update_layout(
-            title=f'DeMarker({self.period})',
-            xaxis_title='Date',
-            yaxis_title='DeMarker',
+            title=f"DeMarker({self.period})",
+            xaxis_title="Date",
+            yaxis_title="DeMarker",
             yaxis=dict(range=[0, 1]),
         )
         fig.show()
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return [f'indicator__demarker_{self.period}']
+        return [f"indicator__demarker_{self.period}"]

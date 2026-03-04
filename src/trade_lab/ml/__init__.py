@@ -10,9 +10,15 @@ except ModuleNotFoundError:
     MLTrainer = None  # type: ignore[assignment,misc]
 
 __all__ = [
-    'BaseTarget', 'FutureReturn', 'DirectionalTarget',
-    'prepare_features', 'FeatureScaler',
-    'KerasModelWrapper', 'dense_model', 'lstm_model',
-    'WalkForwardSplit', 'WalkForwardResult',
-    'MLTrainer',
+    "BaseTarget",
+    "FutureReturn",
+    "DirectionalTarget",
+    "prepare_features",
+    "FeatureScaler",
+    "KerasModelWrapper",
+    "dense_model",
+    "lstm_model",
+    "WalkForwardSplit",
+    "WalkForwardResult",
+    "MLTrainer",
 ]

@@ -29,6 +29,7 @@ import pandas as pd
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _default_block_size(n: int) -> int:
     """Politis & Romano (1994) default: block_size ≈ n^(1/3).
 
@@ -47,7 +48,9 @@ def _log_returns(close: np.ndarray) -> np.ndarray:
     return np.diff(np.log(close))
 
 
-def _close_from_log_returns(log_returns: np.ndarray, initial_close: float) -> np.ndarray:
+def _close_from_log_returns(
+    log_returns: np.ndarray, initial_close: float
+) -> np.ndarray:
     """Reconstruct a Close price series from log returns.
 
     Parameters
@@ -62,10 +65,12 @@ def _close_from_log_returns(log_returns: np.ndarray, initial_close: float) -> np
     np.ndarray
         Price array of length n (same as original).
     """
-    log_prices = np.concatenate([
-        [np.log(initial_close)],
-        np.log(initial_close) + np.cumsum(log_returns),
-    ])
+    log_prices = np.concatenate(
+        [
+            [np.log(initial_close)],
+            np.log(initial_close) + np.cumsum(log_returns),
+        ]
+    )
     return np.exp(log_prices)
 
 
@@ -98,13 +103,13 @@ def _reconstruct_ohlcv(
         Synthetic OHLCV DataFrame sharing the original index.
     """
     n = len(synthetic_close)
-    orig_close = original_df['Close'].to_numpy(dtype=float)
+    orig_close = original_df["Close"].to_numpy(dtype=float)
 
     # Compute ratios; guard against zero Close prices
     safe_close = np.where(orig_close == 0, np.nan, orig_close)
-    high_ratio = original_df['High'].to_numpy(dtype=float) / safe_close
-    low_ratio = original_df['Low'].to_numpy(dtype=float) / safe_close
-    open_ratio = original_df['Open'].to_numpy(dtype=float) / safe_close
+    high_ratio = original_df["High"].to_numpy(dtype=float) / safe_close
+    low_ratio = original_df["Low"].to_numpy(dtype=float) / safe_close
+    open_ratio = original_df["Open"].to_numpy(dtype=float) / safe_close
 
     # Keep only rows where all ratios are finite
     mask = np.isfinite(high_ratio) & np.isfinite(low_ratio) & np.isfinite(open_ratio)
@@ -123,16 +128,16 @@ def _reconstruct_ohlcv(
     synth_low = np.minimum(synth_low, np.minimum(synth_open, synthetic_close))
 
     # Resample Volume from historical distribution
-    hist_volume = original_df['Volume'].to_numpy(dtype=float)
+    hist_volume = original_df["Volume"].to_numpy(dtype=float)
     synth_volume = hist_volume[rng.integers(0, len(hist_volume), size=n)]
 
     return pd.DataFrame(
         {
-            'Open': synth_open,
-            'High': synth_high,
-            'Low': synth_low,
-            'Close': synthetic_close,
-            'Volume': synth_volume,
+            "Open": synth_open,
+            "High": synth_high,
+            "Low": synth_low,
+            "Close": synthetic_close,
+            "Volume": synth_volume,
         },
         index=original_df.index,
     )
@@ -141,6 +146,7 @@ def _reconstruct_ohlcv(
 # ---------------------------------------------------------------------------
 # Base class
 # ---------------------------------------------------------------------------
+
 
 class BaseGenerator(ABC):
     """Abstract base class for Monte Carlo OHLCV generators.
@@ -179,7 +185,7 @@ class BaseGenerator(ABC):
         """Construct a NumPy random generator from the current seed."""
         return np.random.default_rng(self.seed)
 
-    def with_seed(self, seed: int | None) -> 'BaseGenerator':
+    def with_seed(self, seed: int | None) -> "BaseGenerator":
         """Return a shallow copy of this generator with a different seed.
 
         Used by MonteCarloRunner to create per-simulation generators without
@@ -193,6 +199,7 @@ class BaseGenerator(ABC):
 # ---------------------------------------------------------------------------
 # Generators
 # ---------------------------------------------------------------------------
+
 
 class ReturnShuffler(BaseGenerator):
     """Naive Monte Carlo baseline: randomly permutes daily log returns.
@@ -210,7 +217,7 @@ class ReturnShuffler(BaseGenerator):
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         rng = self._make_rng()
-        close = df['Close'].to_numpy(dtype=float)
+        close = df["Close"].to_numpy(dtype=float)
         log_ret = _log_returns(close)
 
         shuffled = rng.permutation(log_ret)
@@ -247,14 +254,12 @@ class BlockBootstrap(BaseGenerator):
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         rng = self._make_rng()
-        close = df['Close'].to_numpy(dtype=float)
+        close = df["Close"].to_numpy(dtype=float)
         log_ret = _log_returns(close)
         n = len(log_ret)
 
         block_size = (
-            self.block_size
-            if self.block_size is not None
-            else _default_block_size(n)
+            self.block_size if self.block_size is not None else _default_block_size(n)
         )
         p = 1.0 / block_size
 
@@ -298,14 +303,12 @@ class CircularBlockBootstrap(BaseGenerator):
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         rng = self._make_rng()
-        close = df['Close'].to_numpy(dtype=float)
+        close = df["Close"].to_numpy(dtype=float)
         log_ret = _log_returns(close)
         n = len(log_ret)
 
         block_size = (
-            self.block_size
-            if self.block_size is not None
-            else _default_block_size(n)
+            self.block_size if self.block_size is not None else _default_block_size(n)
         )
         if block_size >= n:
             raise ValueError(
@@ -321,7 +324,7 @@ class CircularBlockBootstrap(BaseGenerator):
         while len(resampled) < n:
             # Start positions in [0, n) so wrap-around is symmetric
             start = int(rng.integers(0, n))
-            block = circular[start: start + block_size]
+            block = circular[start : start + block_size]
             resampled.extend(block.tolist())
 
         synthetic_log_ret = np.array(resampled[:n])
@@ -357,7 +360,7 @@ class GBMSimulator(BaseGenerator):
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         rng = self._make_rng()
-        close = df['Close'].to_numpy(dtype=float)
+        close = df["Close"].to_numpy(dtype=float)
         log_ret = _log_returns(close)
         n = len(log_ret)
 
@@ -365,7 +368,7 @@ class GBMSimulator(BaseGenerator):
         sigma = float(np.std(log_ret))
 
         # Itô-corrected drift per bar
-        drift = mu - 0.5 * sigma ** 2
+        drift = mu - 0.5 * sigma**2
         innovations = rng.standard_normal(n)
         synthetic_log_ret = drift + sigma * innovations
 

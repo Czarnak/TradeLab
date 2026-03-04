@@ -81,12 +81,12 @@ from trade_lab.optimization.optimizer import OptunaOptimizer
 from trade_lab.optimization.result import OptimizationResult
 
 __all__ = [
-    'IntParam',
-    'FloatParam',
-    'CategoricalParam',
-    'ParamSpace',
-    'Objective',
-    'StrategyFactory',
-    'OptunaOptimizer',
-    'OptimizationResult',
+    "IntParam",
+    "FloatParam",
+    "CategoricalParam",
+    "ParamSpace",
+    "Objective",
+    "StrategyFactory",
+    "OptunaOptimizer",
+    "OptimizationResult",
 ]

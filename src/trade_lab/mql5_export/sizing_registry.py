@@ -3,6 +3,7 @@
 Describes the lot-calculation approach and any auxiliary handles (e.g. ATR)
 required for each sizer type.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
