@@ -92,7 +92,13 @@ def test_compute_metrics_ignores_infinite_returns_without_runtime_warnings():
         warnings.simplefilter("always", RuntimeWarning)
         metrics = compute_metrics(equity_curve, trade_log)
 
-    runtime_messages = [str(w.message) for w in caught if issubclass(w.category, RuntimeWarning)]
-    assert not any("invalid value encountered in subtract" in msg for msg in runtime_messages)
-    assert not any("invalid value encountered in reduce" in msg for msg in runtime_messages)
+    runtime_messages = [
+        str(w.message) for w in caught if issubclass(w.category, RuntimeWarning)
+    ]
+    assert not any(
+        "invalid value encountered in subtract" in msg for msg in runtime_messages
+    )
+    assert not any(
+        "invalid value encountered in reduce" in msg for msg in runtime_messages
+    )
     assert metrics["annual_volatility"] == 0.0

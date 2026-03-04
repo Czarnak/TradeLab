@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
 try:
     import plotly.graph_objects  # noqa: F401
 except ModuleNotFoundError:
+
     class _DummyFigure:
         def add_trace(self, *args, **kwargs):
             return None

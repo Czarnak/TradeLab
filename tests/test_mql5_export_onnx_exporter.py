@@ -66,7 +66,9 @@ def test_export_keras_to_onnx_wraps_tf2onnx_conversion_errors(monkeypatch, tmp_p
         )
 
 
-def test_export_keras_to_onnx_writes_model_and_returns_resolved_path(monkeypatch, tmp_path):
+def test_export_keras_to_onnx_writes_model_and_returns_resolved_path(
+    monkeypatch, tmp_path
+):
     tf2onnx_pkg = types.ModuleType("tf2onnx")
     tf2onnx_pkg.__path__ = []
     tf2onnx_convert = types.ModuleType("tf2onnx.convert")

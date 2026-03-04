@@ -10,7 +10,10 @@ import pytest
 import trade_lab.mql5_export.ml_validator as ml_validator_module
 import trade_lab.mql5_export.onnx_exporter as onnx_exporter_module
 from trade_lab.ml.models import KerasModelWrapper
-from trade_lab.mql5_export.code_generator import export_ml_to_mql5, export_ml_to_mql5_onnx
+from trade_lab.mql5_export.code_generator import (
+    export_ml_to_mql5,
+    export_ml_to_mql5_onnx,
+)
 from trade_lab.mql5_export.introspector import SizingConfig
 from trade_lab.mql5_export.ml_introspector import (
     MLLayerConfig,
@@ -133,7 +136,9 @@ def test_extract_sizing_variants():
 
     none_strategy = MLStrategy(model=model, indicators=[], position_sizer=None)
     fixed_strategy = MLStrategy(
-        model=model, indicators=[], position_sizer=FixedPositionSizer(0.2),
+        model=model,
+        indicators=[],
+        position_sizer=FixedPositionSizer(0.2),
     )
     risk_strategy = MLStrategy(
         model=model,
@@ -164,7 +169,9 @@ def test_ml_introspector_raises_when_keras_unavailable(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", _fail_keras)
 
     strategy = MLStrategy(
-        model=types.SimpleNamespace(model=types.SimpleNamespace(layers=[]), input_names=["f1"]),
+        model=types.SimpleNamespace(
+            model=types.SimpleNamespace(layers=[]), input_names=["f1"]
+        ),
         indicators=[],
     )
     with pytest.raises(ImportError, match="Keras is required for ML introspection"):
@@ -199,7 +206,9 @@ def test_ml_introspector_builds_dense_config_and_skips_non_dense(monkeypatch):
     )
 
     strategy = MLStrategy(
-        model=types.SimpleNamespace(model=keras_model, input_names=["feat_a", "feat_b"]),
+        model=types.SimpleNamespace(
+            model=keras_model, input_names=["feat_a", "feat_b"]
+        ),
         indicators=[],
         position_sizer=RiskBasedPositionSizer(max_fraction=0.03, risk_multiplier=2.5),
         entry_threshold=0.4,
@@ -244,7 +253,9 @@ def test_validate_ml_strategy_rejects_non_ml_strategy():
 
 def test_validate_ml_strategy_rejects_non_wrapper_model():
     strategy = MLStrategy(
-        model=types.SimpleNamespace(model=types.SimpleNamespace(layers=[]), input_names=["f1"]),
+        model=types.SimpleNamespace(
+            model=types.SimpleNamespace(layers=[]), input_names=["f1"]
+        ),
         indicators=[],
     )
     result = validate_ml_strategy(strategy)
@@ -297,14 +308,18 @@ def test_validate_ml_strategy_collects_multiple_errors(monkeypatch):
     assert result.is_valid is False
     assert any("Unsupported layer type 'Conv1D'" in e for e in result.errors)
     assert any("Unsupported activation 'softmax'" in e for e in result.errors)
-    assert any("Final Dense layer must have exactly 1 unit (got 2)" in e for e in result.errors)
+    assert any(
+        "Final Dense layer must have exactly 1 unit (got 2)" in e for e in result.errors
+    )
     assert any("Unsupported position sizer 'object'" in e for e in result.errors)
     assert any("input_names is empty" in e for e in result.errors)
 
 
 def test_validate_ml_strategy_requires_at_least_one_dense(monkeypatch):
     keras = _install_fake_keras(monkeypatch)
-    keras_model = types.SimpleNamespace(layers=[keras.layers.InputLayer(), keras.layers.Dropout()])
+    keras_model = types.SimpleNamespace(
+        layers=[keras.layers.InputLayer(), keras.layers.Dropout()]
+    )
 
     strategy = _strategy_with_wrapper(keras_model=keras_model, input_names=["f1"])
     result = validate_ml_strategy(strategy)
@@ -345,7 +360,9 @@ def test_validate_ml_strategy_emits_sigmoid_and_large_model_warnings(monkeypatch
     assert any("Model has 10,301 parameters" in w for w in result.warnings)
 
 
-def test_export_ml_to_mql5_writes_file_and_prints_warnings(monkeypatch, tmp_path, capsys):
+def test_export_ml_to_mql5_writes_file_and_prints_warnings(
+    monkeypatch, tmp_path, capsys
+):
     validation = ValidationResult(is_valid=True, errors=[], warnings=["test-warning"])
     monkeypatch.setattr(
         ml_validator_module,
@@ -381,14 +398,18 @@ def test_export_ml_to_mql5_raises_when_validation_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(
         ml_validator_module,
         "validate_ml_strategy",
-        lambda _strategy: ValidationResult(is_valid=False, errors=["bad model"], warnings=[]),
+        lambda _strategy: ValidationResult(
+            is_valid=False, errors=["bad model"], warnings=[]
+        ),
     )
 
     with pytest.raises(ValueError, match="MLStrategy validation failed"):
         export_ml_to_mql5(strategy=object(), output_path=str(tmp_path / "invalid.mq5"))
 
 
-def test_export_ml_to_mql5_onnx_uses_default_onnx_path_and_filename(monkeypatch, tmp_path, capsys):
+def test_export_ml_to_mql5_onnx_uses_default_onnx_path_and_filename(
+    monkeypatch, tmp_path, capsys
+):
     validation = ValidationResult(is_valid=True, errors=[], warnings=["onnx-warning"])
     monkeypatch.setattr(
         ml_validator_module,
@@ -409,7 +430,9 @@ def test_export_ml_to_mql5_onnx_uses_default_onnx_path_and_filename(monkeypatch,
         captured_args["opset"] = opset
         return str(tmp_path / "converted_model.onnx")
 
-    monkeypatch.setattr(onnx_exporter_module, "export_keras_to_onnx", _fake_export_keras_to_onnx)
+    monkeypatch.setattr(
+        onnx_exporter_module, "export_keras_to_onnx", _fake_export_keras_to_onnx
+    )
 
     strategy = types.SimpleNamespace(model=types.SimpleNamespace(model="keras-model"))
     out_file = tmp_path / "ml_onnx_export.mq5"
@@ -451,7 +474,9 @@ def test_export_ml_to_mql5_onnx_honours_explicit_onnx_path(monkeypatch, tmp_path
         captured["output_path"] = output_path
         return str(tmp_path / "custom_returned.onnx")
 
-    monkeypatch.setattr(onnx_exporter_module, "export_keras_to_onnx", _fake_export_keras_to_onnx)
+    monkeypatch.setattr(
+        onnx_exporter_module, "export_keras_to_onnx", _fake_export_keras_to_onnx
+    )
 
     explicit_onnx = tmp_path / "models" / "custom_name.onnx"
     strategy = types.SimpleNamespace(model=types.SimpleNamespace(model="keras-model"))
@@ -469,7 +494,9 @@ def test_export_ml_to_mql5_onnx_raises_when_validation_fails(monkeypatch, tmp_pa
     monkeypatch.setattr(
         ml_validator_module,
         "validate_ml_strategy_onnx",
-        lambda _strategy: ValidationResult(is_valid=False, errors=["missing dependency"], warnings=[]),
+        lambda _strategy: ValidationResult(
+            is_valid=False, errors=["missing dependency"], warnings=[]
+        ),
     )
 
     with pytest.raises(ValueError, match="MLStrategy ONNX validation failed"):

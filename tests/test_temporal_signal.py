@@ -22,8 +22,14 @@ def test_temporal_signal_formats_output_column_names_for_int_and_float_periods()
     int_period = CyclicalTemporalSignal(component="day_of_year", period=90)
     float_period = CyclicalTemporalSignal(component="day_of_year", period=90.5)
 
-    assert int_period.output_columns == ["signal__day_of_year_p90_sin", "signal__day_of_year_p90_cos"]
-    assert float_period.output_columns == ["signal__day_of_year_p90.5_sin", "signal__day_of_year_p90.5_cos"]
+    assert int_period.output_columns == [
+        "signal__day_of_year_p90_sin",
+        "signal__day_of_year_p90_cos",
+    ]
+    assert float_period.output_columns == [
+        "signal__day_of_year_p90.5_sin",
+        "signal__day_of_year_p90.5_cos",
+    ]
 
 
 def test_temporal_signal_rejects_unknown_component():

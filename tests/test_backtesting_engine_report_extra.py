@@ -53,7 +53,9 @@ def test_engine_run_and_fetch_data_validate_required_inputs():
 
 def test_engine_fetch_data_drops_multiindex_ticker_level(monkeypatch):
     strategy = _SignalStrategy([0.0] * 3)
-    engine = BacktestEngine(strategy=strategy, ticker="SPY", start="2020-01-01", end="2020-01-05")
+    engine = BacktestEngine(
+        strategy=strategy, ticker="SPY", start="2020-01-01", end="2020-01-05"
+    )
 
     idx = pd.date_range("2020-01-01", periods=3, freq="D")
     data = pd.DataFrame(
@@ -74,7 +76,9 @@ def test_engine_fetch_data_drops_multiindex_ticker_level(monkeypatch):
 def test_engine_run_fetches_data_and_runs_pipeline(monkeypatch):
     df = _sample_ohlcv(3)
     strategy = _SignalStrategy([0.0, 0.0, 0.0])
-    engine = BacktestEngine(strategy=strategy, ticker="SPY", start="2020-01-01", end="2020-01-05")
+    engine = BacktestEngine(
+        strategy=strategy, ticker="SPY", start="2020-01-01", end="2020-01-05"
+    )
 
     monkeypatch.setattr(engine, "_fetch_data", lambda: df)
 
@@ -91,7 +95,9 @@ def test_engine_simulation_produces_long_and_short_trades():
         entry_threshold=0.5,
         exit_threshold=0.1,
     )
-    engine = BacktestEngine(strategy=strategy, initial_capital=10_000, commission=0.0, slippage=0.0)
+    engine = BacktestEngine(
+        strategy=strategy, initial_capital=10_000, commission=0.0, slippage=0.0
+    )
 
     result = engine.run_on(df)
 
@@ -103,7 +109,9 @@ def test_engine_simulation_produces_long_and_short_trades():
 
 def test_engine_simulation_handles_nan_signal_and_non_positive_equity():
     df = _sample_ohlcv(3)
-    strategy = _SignalStrategy([np.nan, 0.9, 0.0], entry_threshold=0.5, exit_threshold=0.1)
+    strategy = _SignalStrategy(
+        [np.nan, 0.9, 0.0], entry_threshold=0.5, exit_threshold=0.1
+    )
     engine = BacktestEngine(strategy=strategy, initial_capital=0.0)
 
     result = engine.run_on(df)

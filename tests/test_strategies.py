@@ -53,7 +53,9 @@ def test_standard_strategy_computes_indicators_and_combines_signal_strength():
 
     expected_raw = 0.5 * first.values + 1.5 * second.values
     expected = np.tanh(expected_raw)
-    np.testing.assert_allclose(result["signal_strength"].to_numpy(), expected.to_numpy())
+    np.testing.assert_allclose(
+        result["signal_strength"].to_numpy(), expected.to_numpy()
+    )
     assert first.compute_calls == 1
     assert second.compute_calls == 1
     assert first.signal_calls == 1
@@ -77,9 +79,14 @@ def test_ml_strategy_builds_features_from_model_inputs_and_predicts():
 
     assert feature_a.compute_calls == 1
     assert feature_b.compute_calls == 1
-    assert list(model.last_features.columns) == ["indicator__feature_b", "indicator__feature_a"]
+    assert list(model.last_features.columns) == [
+        "indicator__feature_b",
+        "indicator__feature_a",
+    ]
     np.testing.assert_allclose(
         model.last_features.to_numpy(),
         result[["indicator__feature_b", "indicator__feature_a"]].to_numpy(),
     )
-    np.testing.assert_allclose(result["signal_strength"].to_numpy(), np.array([-0.1, 0.0, 0.9]))
+    np.testing.assert_allclose(
+        result["signal_strength"].to_numpy(), np.array([-0.1, 0.0, 0.9])
+    )

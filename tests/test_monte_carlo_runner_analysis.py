@@ -62,7 +62,9 @@ def test_runner_run_collects_metrics_converts_none_to_nan_and_advances_seed():
     df = _sample_ohlcv()
     engine = _DummyEngine()
     generator = _TrackingGenerator(seed=100)
-    runner = MonteCarloRunner(engine=engine, generator=generator, n_simulations=3, verbose=False)
+    runner = MonteCarloRunner(
+        engine=engine, generator=generator, n_simulations=3, verbose=False
+    )
 
     result = runner.run(df)
 
@@ -94,7 +96,9 @@ def test_runner_run_filters_metrics_when_subset_is_configured():
 
 
 def test_runner_make_iterator_returns_range_when_verbose_disabled():
-    runner = MonteCarloRunner(_DummyEngine(), _TrackingGenerator(seed=1), n_simulations=2, verbose=False)
+    runner = MonteCarloRunner(
+        _DummyEngine(), _TrackingGenerator(seed=1), n_simulations=2, verbose=False
+    )
 
     iterator = runner._make_iterator(range(2))
 
@@ -114,7 +118,9 @@ def test_runner_make_iterator_uses_tqdm_when_available(monkeypatch):
     monkeypatch.setattr(mc_runner, "_TQDM_AVAILABLE", True)
     monkeypatch.setattr(mc_runner, "_tqdm", fake_tqdm)
 
-    runner = MonteCarloRunner(_DummyEngine(), _TrackingGenerator(seed=1), n_simulations=2, verbose=True)
+    runner = MonteCarloRunner(
+        _DummyEngine(), _TrackingGenerator(seed=1), n_simulations=2, verbose=True
+    )
     iterator = runner._make_iterator(range(2))
 
     assert iterator == [0, 1]
@@ -129,21 +135,27 @@ def test_runner_make_iterator_uses_tqdm_when_available(monkeypatch):
 def test_runner_make_iterator_uses_fallback_when_tqdm_unavailable(monkeypatch, capsys):
     monkeypatch.setattr(mc_runner, "_TQDM_AVAILABLE", False)
 
-    runner = MonteCarloRunner(_DummyEngine(), _TrackingGenerator(seed=1), n_simulations=3, verbose=True)
+    runner = MonteCarloRunner(
+        _DummyEngine(), _TrackingGenerator(seed=1), n_simulations=3, verbose=True
+    )
     iterator = runner._make_iterator(range(3))
 
     assert isinstance(iterator, mc_runner._FallbackProgress)
     assert list(iterator) == [0, 1, 2]
 
     captured = capsys.readouterr().out
-    assert "Monte Carlo (_TrackingGenerator): 3/3 simulations complete (100%)" in captured
+    assert (
+        "Monte Carlo (_TrackingGenerator): 3/3 simulations complete (100%)" in captured
+    )
 
 
 def test_run_single_simulation_handles_none_seed_and_returns_metrics_dict():
     df = _sample_ohlcv()
     engine = _DummyEngine()
     generator = _TrackingGenerator(seed=None)
-    runner = MonteCarloRunner(engine=engine, generator=generator, n_simulations=1, verbose=False)
+    runner = MonteCarloRunner(
+        engine=engine, generator=generator, n_simulations=1, verbose=False
+    )
 
     metrics = runner._run_single_simulation(df, simulation_index=9, seen_keys=set())
 
@@ -199,6 +211,7 @@ def test_analysis_confidence_interval_percentile_of_available_metrics_and_keyerr
     with pytest.raises(KeyError, match="Metric 'missing' not found"):
         analysis.confidence_interval("missing")
 
+
 def test_runner_import_path_handles_missing_tqdm(monkeypatch):
     import builtins
     import importlib.util
@@ -223,4 +236,3 @@ def test_runner_import_path_handles_missing_tqdm(monkeypatch):
     spec.loader.exec_module(module)
 
     assert module._TQDM_AVAILABLE is False
-

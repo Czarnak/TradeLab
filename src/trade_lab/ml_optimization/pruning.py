@@ -217,8 +217,10 @@ class ModelPruner:
             x = layer(x)
             layer.set_weights(weights)
 
+        from trade_lab.ml.models import directional_loss
+
         fine_tuned_model = keras.Model(inputs=inputs, outputs=x)
-        fine_tuned_model.compile(optimizer="adam", loss="mse")
+        fine_tuned_model.compile(optimizer="adam", loss=directional_loss())
         fine_tuned_model.fit(X_train, y_train, epochs=fine_tune_epochs, verbose=0)
 
         # Step 6 — Wrap and rebuild strategy

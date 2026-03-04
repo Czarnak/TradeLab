@@ -21,17 +21,9 @@ Example workflow
 ...                   lag_values=[0, 1, 3], optional=True),
 ... ]
 >>>
->>> # 2. Define model factory
->>> def build_model(n_features: int):
-...     import keras
-...     model = keras.Sequential([
-...         keras.layers.Dense(32, activation='relu',
-...                            input_shape=(n_features,)),
-...         keras.layers.Dense(16, activation='relu'),
-...         keras.layers.Dense(1, activation='tanh'),
-...     ])
-...     model.compile(optimizer='adam', loss='mse')
-...     return model
+>>> # 2. Define model factory (uses directional_loss by default)
+>>> from trade_lab.ml.models import dense_model, directional_loss
+>>> build_model = dense_model(layers=[32, 16])
 >>>
 >>> # 3. Optimise
 >>> optimizer = MLOptimizer(

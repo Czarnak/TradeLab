@@ -100,6 +100,7 @@ def test_heikin_ashi_signal_compute_and_plot_and_columns():
     import plotly.graph_objects as go
 
     if not hasattr(go, "Candlestick"):
+
         class _DummyCandlestick:
             def __init__(self, *args, **kwargs):
                 pass

@@ -86,16 +86,22 @@ def test_tema_compute_matches_formula():
 @pytest.mark.parametrize(
     ("indicator", "expected_columns"),
     [
-        (BollingerBands(period=20, num_deviations=2.0), [
-            "indicator__bb_upper_20",
-            "indicator__bb_middle_20",
-            "indicator__bb_lower_20",
-        ]),
+        (
+            BollingerBands(period=20, num_deviations=2.0),
+            [
+                "indicator__bb_upper_20",
+                "indicator__bb_middle_20",
+                "indicator__bb_lower_20",
+            ],
+        ),
         (CCI(period=14), ["indicator__cci_14"]),
-        (Stochastic(k_period=14, d_period=3, slowing=3), [
-            "indicator__stoch_k_14",
-            "indicator__stoch_d_14",
-        ]),
+        (
+            Stochastic(k_period=14, d_period=3, slowing=3),
+            [
+                "indicator__stoch_k_14",
+                "indicator__stoch_d_14",
+            ],
+        ),
         (ROC(period=12), ["indicator__roc_12"]),
         (TRIX(period=14), ["indicator__trix_14"]),
         (DPO(period=20), ["indicator__dpo_20"]),
@@ -104,11 +110,14 @@ def test_tema_compute_matches_formula():
         (OBV(period=14), ["indicator__obv_roc_14"]),
         (ForceIndex(period=13), ["indicator__force_13"]),
         (CHO(fast_period=3, slow_period=10), ["indicator__cho_3_10"]),
-        (ADX(period=14), [
-            "indicator__adx_14",
-            "indicator__adx_plus_di_14",
-            "indicator__adx_minus_di_14",
-        ]),
+        (
+            ADX(period=14),
+            [
+                "indicator__adx_14",
+                "indicator__adx_plus_di_14",
+                "indicator__adx_minus_di_14",
+            ],
+        ),
         (MassIndex(ema_period=9, sum_period=25), ["indicator__mi_9_25"]),
     ],
 )
@@ -160,4 +169,3 @@ def test_indicators_package_exports_new_classes():
         "MassIndex",
     ]:
         assert hasattr(indicators, name)
-

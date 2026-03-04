@@ -75,7 +75,9 @@ def _install_fake_keras_for_builders(monkeypatch):
             self.activation = activation
 
         def __call__(self, x):
-            return _Tensor("dense", {"prev": x, "units": self.units, "activation": self.activation})
+            return _Tensor(
+                "dense", {"prev": x, "units": self.units, "activation": self.activation}
+            )
 
     class Dropout:
         def __init__(self, rate):
@@ -165,21 +167,29 @@ def test_targets_generate_expected_values():
     future_target = FutureReturn(periods=1, scale=1.0).generate(df)
     directional_target = DirectionalTarget(periods=1).generate(df)
 
-    expected_future = np.array([np.tanh(np.log(110.0 / 100.0)), np.tanh(np.log(99.0 / 110.0))])
+    expected_future = np.array(
+        [np.tanh(np.log(110.0 / 100.0)), np.tanh(np.log(99.0 / 110.0))]
+    )
     np.testing.assert_allclose(future_target.iloc[:2].to_numpy(), expected_future)
     assert np.isnan(future_target.iloc[2])
-    np.testing.assert_allclose(directional_target.iloc[:2].to_numpy(), np.array([1.0, -1.0]))
+    np.testing.assert_allclose(
+        directional_target.iloc[:2].to_numpy(), np.array([1.0, -1.0])
+    )
     assert np.isnan(directional_target.iloc[2])
 
 
 def test_walk_forward_split_expanding_and_sliding_and_errors():
-    expanding = WalkForwardSplit(n_splits=2, initial_train_ratio=0.6, expanding=True).split(10)
+    expanding = WalkForwardSplit(
+        n_splits=2, initial_train_ratio=0.6, expanding=True
+    ).split(10)
     np.testing.assert_array_equal(expanding[0].train_idx, np.arange(0, 6))
     np.testing.assert_array_equal(expanding[0].test_idx, np.arange(6, 8))
     np.testing.assert_array_equal(expanding[1].train_idx, np.arange(0, 8))
     np.testing.assert_array_equal(expanding[1].test_idx, np.arange(8, 10))
 
-    sliding = WalkForwardSplit(n_splits=2, initial_train_ratio=0.6, expanding=False).split(10)
+    sliding = WalkForwardSplit(
+        n_splits=2, initial_train_ratio=0.6, expanding=False
+    ).split(10)
     np.testing.assert_array_equal(sliding[0].train_idx, np.arange(0, 6))
     np.testing.assert_array_equal(sliding[1].train_idx, np.arange(2, 8))
 
@@ -215,7 +225,9 @@ def test_keras_wrapper_predict_save_and_load(monkeypatch, tmp_path: Path):
     out_dir = tmp_path / "saved_model"
     wrapper.save(str(out_dir))
     assert (out_dir / "model.keras").exists()
-    assert json.loads((out_dir / "metadata.json").read_text(encoding="utf-8"))["input_names"] == ["f1", "f2"]
+    assert json.loads((out_dir / "metadata.json").read_text(encoding="utf-8"))[
+        "input_names"
+    ] == ["f1", "f2"]
 
     fake_loaded_model = object()
     fake_keras = types.ModuleType("keras")

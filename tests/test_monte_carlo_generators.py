@@ -100,7 +100,9 @@ def test_block_bootstrap_supports_default_and_explicit_block_size():
 
     _assert_standard_output_shape(df, out_default)
     _assert_standard_output_shape(df, out_explicit)
-    pd.testing.assert_frame_equal(out_explicit, BlockBootstrap(block_size=2, seed=3).generate(df))
+    pd.testing.assert_frame_equal(
+        out_explicit, BlockBootstrap(block_size=2, seed=3).generate(df)
+    )
 
 
 def test_circular_block_bootstrap_is_reproducible_for_fixed_seed():

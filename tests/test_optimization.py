@@ -162,7 +162,9 @@ def test_objective_call_prunes_when_metric_is_none(monkeypatch):
         engine_kwargs={},
     )
 
-    with pytest.raises(opt_objective.optuna.exceptions.TrialPruned, match="None or NaN"):
+    with pytest.raises(
+        opt_objective.optuna.exceptions.TrialPruned, match="None or NaN"
+    ):
         objective(_FakeTrial())
 
 
@@ -176,7 +178,9 @@ def test_objective_call_prunes_when_metric_is_nan(monkeypatch):
         engine_kwargs={},
     )
 
-    with pytest.raises(opt_objective.optuna.exceptions.TrialPruned, match="None or NaN"):
+    with pytest.raises(
+        opt_objective.optuna.exceptions.TrialPruned, match="None or NaN"
+    ):
         objective(_FakeTrial())
 
 
@@ -280,7 +284,10 @@ def test_optimizer_optimize_wires_study_objective_and_returns_result(monkeypatch
     assert captured["create_study_kwargs"]["study_name"] == "my_study"
     assert captured["create_study_kwargs"]["direction"] == "maximize"
     assert captured["create_study_kwargs"]["storage"] == "sqlite:///db.sqlite"
-    assert isinstance(captured["create_study_kwargs"]["sampler"], opt_optimizer.optuna.samplers.TPESampler)
+    assert isinstance(
+        captured["create_study_kwargs"]["sampler"],
+        opt_optimizer.optuna.samplers.TPESampler,
+    )
     assert captured["create_study_kwargs"]["load_if_exists"] is True
     assert captured["n_trials"] == 7
     assert captured["n_jobs"] == 3

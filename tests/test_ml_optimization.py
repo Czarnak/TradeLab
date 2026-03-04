@@ -119,7 +119,10 @@ def _install_fake_keras(monkeypatch):
             self.units = units
             self.name = name
             self._config = {"units": units, "name": name}
-            self._weights = [np.array([[0.0]], dtype=float), np.array([0.0], dtype=float)]
+            self._weights = [
+                np.array([[0.0]], dtype=float),
+                np.array([0.0], dtype=float),
+            ]
 
         def get_config(self):
             return dict(self._config)
@@ -169,7 +172,7 @@ def _install_fake_keras(monkeypatch):
             for layer in self.layers:
                 ws = layer.get_weights()
                 n = len(ws)
-                layer.set_weights(weights[i: i + n])
+                layer.set_weights(weights[i : i + n])
                 i += n
             return None
 
@@ -309,7 +312,11 @@ def test_ml_objective_happy_path_and_metric_nan_prune(monkeypatch):
             return np.ones((4, 2)), np.ones((4,))
 
     monkeypatch.setattr(ml_objective, "FeatureMatrix", FixedFeatureMatrix)
-    monkeypatch.setattr(ml_objective, "_wrap_model", lambda model, names: SimpleNamespace(input_names=names))
+    monkeypatch.setattr(
+        ml_objective,
+        "_wrap_model",
+        lambda model, names: SimpleNamespace(input_names=names),
+    )
 
     class FakeEngine:
         def __init__(self, strategy, **kwargs):
@@ -351,7 +358,9 @@ def test_ml_optimizer_direction_storage_and_optimize_wiring(monkeypatch, tmp_pat
     assert _infer_direction("sharpe_ratio") == "maximize"
 
     opt = MLOptimizer(
-        indicator_specs=[IndicatorSpec("i", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)],
+        indicator_specs=[
+            IndicatorSpec("i", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)
+        ],
         model_factory=_fake_model_factory,
         train_df=_sample_df(),
         val_df=_sample_df(),
@@ -362,7 +371,9 @@ def test_ml_optimizer_direction_storage_and_optimize_wiring(monkeypatch, tmp_pat
     assert opt._resolve_storage() is None
 
     opt2 = MLOptimizer(
-        indicator_specs=[IndicatorSpec("i", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)],
+        indicator_specs=[
+            IndicatorSpec("i", _DummyIndicator, 2, 5, [0, 1, 2], optional=False)
+        ],
         model_factory=_fake_model_factory,
         train_df=_sample_df(),
         val_df=_sample_df(),
@@ -415,7 +426,13 @@ def test_ml_optimizer_build_result_and_trials_df(monkeypatch):
         "_deserialize_specs",
         lambda raw: [(_DummyIndicator, 2, 1)],
     )
-    monkeypatch.setattr(ml_optimizer, "_wrap_model", lambda model, names: SimpleNamespace(input_names=names, predict=lambda X: np.zeros(len(X))))
+    monkeypatch.setattr(
+        ml_optimizer,
+        "_wrap_model",
+        lambda model, names: SimpleNamespace(
+            input_names=names, predict=lambda X: np.zeros(len(X))
+        ),
+    )
 
     class FakeEngine:
         def __init__(self, strategy, **kwargs):
@@ -516,7 +533,14 @@ def test_model_pruner_init_and_prune_model_threshold_percentile(monkeypatch):
 
 def test_model_pruner_prune_result_updates_result(monkeypatch):
     keras = _install_fake_keras(monkeypatch)
-    monkeypatch.setattr(ml_pruning, "_wrap_model", lambda model, names: SimpleNamespace(input_names=names, predict=lambda X: np.zeros(len(X))), raising=False)
+    monkeypatch.setattr(
+        ml_pruning,
+        "_wrap_model",
+        lambda model, names: SimpleNamespace(
+            input_names=names, predict=lambda X: np.zeros(len(X))
+        ),
+        raising=False,
+    )
 
     dense = keras.layers.Dense(name="dense_1")
     dense.set_weights([np.array([[0.0, 0.0], [0.2, 0.3]]), np.array([0.0, 0.0])])

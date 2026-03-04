@@ -59,4 +59,3 @@ def test_indicator_registry_contains_new_indicators(
 def test_atr_registry_marks_non_directional_signal():
     descriptor = INDICATOR_REGISTRY[ATR]
     assert "no directional signal" in descriptor.signal_strength_formula.lower()
-

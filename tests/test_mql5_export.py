@@ -31,7 +31,7 @@ class _UnsupportedSignal(BaseSignal):
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return ['signal__unsupported']
+        return ["signal__unsupported"]
 
 
 class _UnsupportedIndicator(BaseIndicator):
@@ -48,7 +48,7 @@ class _UnsupportedIndicator(BaseIndicator):
 
     @property
     def _raw_output_columns(self) -> list[str]:
-        return ['indicator__unsupported']
+        return ["indicator__unsupported"]
 
 
 class _UnsupportedSizer:
@@ -60,7 +60,7 @@ def test_validate_strategy_rejects_non_standard_strategy():
 
     assert not result.is_valid
     assert result.errors
-    assert 'StandardStrategy' in result.errors[0]
+    assert "StandardStrategy" in result.errors[0]
 
 
 def test_validate_strategy_reports_unsupported_parts():
@@ -72,9 +72,9 @@ def test_validate_strategy_reports_unsupported_parts():
     result = validate_strategy(strategy)
 
     assert not result.is_valid
-    assert any('Unsupported indicator' in err for err in result.errors)
-    assert any('Unsupported signal' in err for err in result.errors)
-    assert any('Unsupported position sizer' in err for err in result.errors)
+    assert any("Unsupported indicator" in err for err in result.errors)
+    assert any("Unsupported signal" in err for err in result.errors)
+    assert any("Unsupported position sizer" in err for err in result.errors)
 
 
 def test_validate_strategy_emits_macd_and_cma_warning_once():
@@ -90,8 +90,10 @@ def test_validate_strategy_emits_macd_and_cma_warning_once():
     result = validate_strategy(strategy)
 
     assert result.is_valid
-    assert sum('MACD signal strength is unnormalised' in w for w in result.warnings) == 1
-    assert sum('CMA (Cumulative Moving Average)' in w for w in result.warnings) == 1
+    assert (
+        sum("MACD signal strength is unnormalised" in w for w in result.warnings) == 1
+    )
+    assert sum("CMA (Cumulative Moving Average)" in w for w in result.warnings) == 1
 
 
 def test_strategy_introspector_builds_names_and_deduplicates_signals():
@@ -99,7 +101,7 @@ def test_strategy_introspector_builds_names_and_deduplicates_signals():
         indicators=[
             (EMA(OHLC(), period=20), 1.0),
             (EMA(OHLC(), period=50), -0.5),
-            (RSI(CyclicalTemporalSignal('hour', 24), period=14), 0.25),
+            (RSI(CyclicalTemporalSignal("hour", 24), period=14), 0.25),
         ],
         position_sizer=RiskBasedPositionSizer(max_fraction=0.03, risk_multiplier=2.5),
         entry_threshold=0.4,
@@ -110,13 +112,28 @@ def test_strategy_introspector_builds_names_and_deduplicates_signals():
 
     config = StrategyIntrospector().introspect(strategy)
 
-    assert [ind.var_name for ind in config.indicators] == ['ema_fast', 'ema_slow', 'rsi']
-    assert [ind.input_prefix for ind in config.indicators] == ['EMA_Fast', 'EMA_Slow', 'RSI']
-    assert [ind.function_name for ind in config.indicators] == ['EMAFast', 'EMASlow', 'RSI']
-    assert sorted(sig.signal_type for sig in config.signals) == ['cyclical_temporal', 'ohlc']
-    assert config.sizing.sizer_type == 'risk_based'
-    assert config.sizing.params['max_fraction'] == pytest.approx(0.03)
-    assert config.sizing.params['risk_multiplier'] == pytest.approx(2.5)
+    assert [ind.var_name for ind in config.indicators] == [
+        "ema_fast",
+        "ema_slow",
+        "rsi",
+    ]
+    assert [ind.input_prefix for ind in config.indicators] == [
+        "EMA_Fast",
+        "EMA_Slow",
+        "RSI",
+    ]
+    assert [ind.function_name for ind in config.indicators] == [
+        "EMAFast",
+        "EMASlow",
+        "RSI",
+    ]
+    assert sorted(sig.signal_type for sig in config.signals) == [
+        "cyclical_temporal",
+        "ohlc",
+    ]
+    assert config.sizing.sizer_type == "risk_based"
+    assert config.sizing.params["max_fraction"] == pytest.approx(0.03)
+    assert config.sizing.params["risk_multiplier"] == pytest.approx(2.5)
     assert config.entry_threshold == pytest.approx(0.4)
     assert config.exit_threshold == pytest.approx(0.15)
     assert config.allow_long is True
@@ -134,29 +151,29 @@ def test_export_to_mql5_writes_file_and_returns_metadata(tmp_path: Path):
         exit_threshold=0.1,
     )
 
-    out_file = tmp_path / 'generated_ea.mq5'
+    out_file = tmp_path / "generated_ea.mq5"
     result = export_to_mql5(
         strategy,
-        timeframe='PERIOD_M15',
+        timeframe="PERIOD_M15",
         output_path=str(out_file),
         magic_number=42,
-        ea_name='UnitTest EA',
+        ea_name="UnitTest EA",
     )
 
     assert out_file.exists()
     assert Path(result.filepath) == out_file.resolve()
     assert result.validation.is_valid
     assert len(result.indicators_exported) == 2
-    assert 'EntryThreshold = 0.3500;' in result.code
-    assert 'GetSMAStrength()' in result.code
-    assert 'GetRSIStrength()' in result.code
-    assert 'PERIOD_M15' in result.code
-    assert 'MagicNumber    = 42' in result.code
-    assert out_file.read_bytes().startswith(b'\xef\xbb\xbf')
+    assert "EntryThreshold = 0.3500;" in result.code
+    assert "GetSMAStrength()" in result.code
+    assert "GetRSIStrength()" in result.code
+    assert "PERIOD_M15" in result.code
+    assert "MagicNumber    = 42" in result.code
+    assert out_file.read_bytes().startswith(b"\xef\xbb\xbf")
 
 
 def test_export_to_mql5_raises_for_invalid_strategy(tmp_path: Path):
-    out_file = tmp_path / 'invalid.mq5'
+    out_file = tmp_path / "invalid.mq5"
 
-    with pytest.raises(ValueError, match='Strategy validation failed'):
+    with pytest.raises(ValueError, match="Strategy validation failed"):
         export_to_mql5(object(), output_path=str(out_file))

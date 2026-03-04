@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [0.7.2] - 2026-03-04
+
+### Fixed
+
+- `pyproject.toml`: resolved protobuf conflict in the `[onnx]` extra.
+  `tf2onnx>=1.16` requires `protobuf~=3.20` (<4), while `tensorflow>=2.20`
+  requires `protobuf>=5.28` — mutually exclusive in the same environment.
+  Removed the duplicate `tensorflow>=2.20` and `keras>=3.13` entries from
+  `[onnx]` (already present in `[ml]`). The `[onnx]` extra must be installed
+  in a **dedicated environment** separate from `[ml]`: train with
+  `pip install -e ".[ml]"`, export in a separate `pip install -e ".[onnx]"` env.
+  Also relaxed the `onnx<1.18` and `tf2onnx<1.17` upper bounds — tf2onnx only
+  requires `onnx>=1.4.1`; the ceilings were unnecessarily restrictive.
+- `pyproject.toml`: added `Programming Language :: Python :: 3.13` classifier
+  to match `requires-python = ">=3.10"` and the CI matrix (which tests 3.13).
+
+### Changed
+
+- `src/trade_lab/ml/models.py`: default training loss changed from `mse` to a
+  hybrid directional loss across all model factories (`dense_model`, `lstm_model`).
+  The new loss penalises wrong-direction predictions via `-mean(sign(y_true) * y_pred)`
+  with a small MSE regularisation term for gradient stability.
+  - New `directional_loss(magnitude_weight)` factory function added at module level.
+    `magnitude_weight` (default 0.1) controls the MSE regularisation weight.
+    Pass `magnitude_weight=0.0` for pure directional loss.
+  - `dense_model()` and `lstm_model()` gain a `magnitude_weight: float = 0.1` parameter.
+- `src/trade_lab/ml_optimization/pruning.py`: fine-tuning after pruning now uses
+  `directional_loss()` instead of `'mse'`, consistent with initial training.
+
 ## [0.7.1] - 2026-03-03
 
 ### Added
