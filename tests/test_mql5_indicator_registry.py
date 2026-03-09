@@ -13,6 +13,12 @@ from trade_lab.indicators.oscillators import (
     Stochastic,
     TRIX,
 )
+from trade_lab.indicators.statistical import (
+    BaseKernel,
+    GaussianKernel,
+    LaplaceKernel,
+    SquareKernel,
+)
 from trade_lab.indicators.trend import ADX, ATR, MassIndex
 from trade_lab.indicators.volume import CHO, OBV, ForceIndex
 from trade_lab.mql5_export.indicator_registry import INDICATOR_REGISTRY
@@ -59,3 +65,16 @@ def test_indicator_registry_contains_new_indicators(
 def test_atr_registry_marks_non_directional_signal():
     descriptor = INDICATOR_REGISTRY[ATR]
     assert "no directional signal" in descriptor.signal_strength_formula.lower()
+
+
+@pytest.mark.parametrize(
+    "indicator_cls", [BaseKernel, LaplaceKernel, GaussianKernel, SquareKernel]
+)
+def test_indicator_registry_contains_statistical_kernel_descriptors(indicator_cls):
+    descriptor = INDICATOR_REGISTRY[indicator_cls]
+
+    assert descriptor.uses_builtin_handle is False
+    assert descriptor.builtin_function is None
+    assert descriptor.n_buffers == 0
+    assert "KernelEstimate" in descriptor.signal_strength_formula
+    assert descriptor.applied_price_map["Close"] == "PRICE_CLOSE"

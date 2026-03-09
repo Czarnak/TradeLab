@@ -10,13 +10,36 @@ from dataclasses import dataclass, field
 
 from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
 from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
+from trade_lab.indicators.statistical import BaseKernel
+from trade_lab.risk_management import (
+    FixedSL,
+    FixedTP,
+    FixedTS,
+    MovingAverageSL,
+    MovingAverageTS,
+    ParabolicSARSL,
+    ParabolicSARTS,
+    SignalStrengthSL,
+    SignalStrengthTP,
+    SignalStrengthTS,
+)
 from trade_lab.signals.signals import OHLC, HeikinAshi
 from trade_lab.signals.temporal import CyclicalTemporalSignal
 from trade_lab.sizing.fixed import FixedPositionSizer
 from trade_lab.sizing.risk_based import RiskBasedPositionSizer
 from trade_lab.strategies.standard import StandardStrategy
 
-_SUPPORTED_INDICATORS = (SMA, EMA, WMA, CMA, RSI, MACD, Momentum, LarryWilliams)
+_SUPPORTED_INDICATORS = (
+    SMA,
+    EMA,
+    WMA,
+    CMA,
+    RSI,
+    MACD,
+    Momentum,
+    LarryWilliams,
+    BaseKernel,
+)
 _SUPPORTED_SIGNALS = (OHLC, HeikinAshi, CyclicalTemporalSignal)
 _SUPPORTED_SIZERS = (type(None), FixedPositionSizer, RiskBasedPositionSizer)
 
@@ -38,6 +61,59 @@ class ValidationResult:
     is_valid: bool
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+
+def collect_risk_warnings(strategy) -> list[str]:
+    warnings: list[str] = []
+
+    take_profit = getattr(strategy, "take_profit", None)
+    if take_profit is not None and not isinstance(
+        take_profit, (FixedTP, SignalStrengthTP)
+    ):
+        warnings.append(
+            f"{type(take_profit).__name__}: Take-profit export is only available for "
+            "FixedTP and SignalStrengthTP."
+        )
+
+    stop_loss = getattr(strategy, "stop_loss", None)
+    if isinstance(stop_loss, MovingAverageSL):
+        warnings.append(
+            "MovingAverageSL: MA column must be mapped to a valid MT5 indicator "
+            "handle manually in the EA."
+        )
+    elif isinstance(stop_loss, ParabolicSARSL):
+        warnings.append(
+            "ParabolicSARSL: Parabolic SAR stop loss requires manual MT5-side "
+            "implementation in the EA."
+        )
+    elif stop_loss is not None and not isinstance(
+        stop_loss, (FixedSL, SignalStrengthSL)
+    ):
+        warnings.append(
+            f"{type(stop_loss).__name__}: Stop-loss export is only available for "
+            "FixedSL and SignalStrengthSL."
+        )
+
+    trailing_stop = getattr(strategy, "trailing_stop", None)
+    if isinstance(trailing_stop, MovingAverageTS):
+        warnings.append(
+            "MovingAverageTS: MA column must be mapped to a valid MT5 indicator "
+            "handle manually in the EA."
+        )
+    elif isinstance(trailing_stop, ParabolicSARTS):
+        warnings.append(
+            "ParabolicSARTS: Parabolic SAR trailing stop requires manual MT5-side "
+            "implementation in the EA."
+        )
+    elif trailing_stop is not None and not isinstance(
+        trailing_stop, (FixedTS, SignalStrengthTS)
+    ):
+        warnings.append(
+            f"{type(trailing_stop).__name__}: Trailing-stop export is only available "
+            "for FixedTS and SignalStrengthTS."
+        )
+
+    return warnings
 
 
 def validate_strategy(strategy: object) -> ValidationResult:
@@ -124,6 +200,8 @@ def validate_strategy(strategy: object) -> ValidationResult:
             f"Unsupported position sizer: {type(strategy.position_sizer).__name__}. "
             "Supported: None, FixedPositionSizer, RiskBasedPositionSizer."
         )
+
+    warnings.extend(collect_risk_warnings(strategy))
 
     return ValidationResult(
         is_valid=len(errors) == 0,

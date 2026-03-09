@@ -7,7 +7,7 @@ validator — the schema is identical, only the checks differ.
 
 from __future__ import annotations
 
-from trade_lab.mql5_export.validators import ValidationResult
+from trade_lab.mql5_export.validators import ValidationResult, collect_risk_warnings
 from trade_lab.sizing.fixed import FixedPositionSizer
 from trade_lab.sizing.risk_based import RiskBasedPositionSizer
 from trade_lab.strategies.ml_strategy import MLStrategy
@@ -176,6 +176,8 @@ def validate_ml_strategy(strategy: object) -> ValidationResult:
             "may produce very large .mq5 files and slow MetaEditor compilation. "
             "Consider pruning the model before export."
         )
+
+    warnings.extend(collect_risk_warnings(strategy))
 
     is_valid = len(errors) == 0
     return ValidationResult(is_valid=is_valid, errors=errors, warnings=warnings)

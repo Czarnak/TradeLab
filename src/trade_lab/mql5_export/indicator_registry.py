@@ -24,6 +24,27 @@ from trade_lab.indicators.oscillators import (
     Stochastic,
     TRIX,
 )
+from trade_lab.indicators.statistical import (
+    BaseKernel,
+    CauchyKernel,
+    CosineKernel,
+    EpanechnikovKernel,
+    ExponentialKernel,
+    GaussianKernel,
+    LaplaceKernel,
+    LogLogisticKernel,
+    LogisticKernel,
+    MortersKernel,
+    ParabolicKernel,
+    PowerKernel,
+    QuarticKernel,
+    SilvermanKernel,
+    SincKernel,
+    SquareKernel,
+    TentKernel,
+    TriangularKernel,
+    WaveKernel,
+)
 from trade_lab.indicators.trend import ADX, ATR, MassIndex
 from trade_lab.indicators.volume import CHO, OBV, ForceIndex
 
@@ -368,3 +389,44 @@ INDICATOR_REGISTRY: dict[type, MQL5IndicatorDescriptor] = {
         applied_price_map=APPLIED_PRICE_MAP,
     ),
 }
+
+_KERNEL_DESCRIPTOR = MQL5IndicatorDescriptor(
+    # Kernel regression is fully custom in MQL5: compute kernel weights, the
+    # weighted estimate, rolling residual deviation bands, and then map the
+    # price-versus-estimate z-score through tanh.
+    uses_builtin_handle=False,
+    builtin_function=None,
+    ma_method=None,
+    n_buffers=0,
+    signal_strength_formula=(
+        "estimate = KernelEstimate(shift, bandwidth, applied_price, kernel); "
+        "stdev = KernelScaledDeviation(shift, bandwidth, deviations, applied_price, kernel); "
+        "fallback = RollingStd(bandwidth, shift, applied_price); "
+        "scale = stdev > 0 ? stdev : fallback; "
+        "return MathTanh((price - estimate) / scale);"
+    ),
+    applied_price_map=APPLIED_PRICE_MAP,
+)
+
+for _kernel_cls in (
+    BaseKernel,
+    TriangularKernel,
+    GaussianKernel,
+    EpanechnikovKernel,
+    LogisticKernel,
+    LogLogisticKernel,
+    CosineKernel,
+    SincKernel,
+    LaplaceKernel,
+    QuarticKernel,
+    ParabolicKernel,
+    ExponentialKernel,
+    SilvermanKernel,
+    CauchyKernel,
+    TentKernel,
+    WaveKernel,
+    PowerKernel,
+    MortersKernel,
+    SquareKernel,
+):
+    INDICATOR_REGISTRY[_kernel_cls] = _KERNEL_DESCRIPTOR

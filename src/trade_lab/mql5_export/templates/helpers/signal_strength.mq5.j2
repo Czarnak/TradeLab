@@ -107,6 +107,9 @@ double Get{{ ind.function_name }}Strength()
                   : -50.0;
    return MathTanh((-50.0 - lwr) / 20.0);
 
+{% elif ind.is_kernel_type %}
+{% include 'indicators/kernel_regression.mq5.j2' %}
+
 {% endif %}
   }
 

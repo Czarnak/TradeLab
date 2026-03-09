@@ -14,7 +14,7 @@ from trade_lab.mql5_export.code_generator import (
     export_ml_to_mql5,
     export_ml_to_mql5_onnx,
 )
-from trade_lab.mql5_export.introspector import SizingConfig
+from trade_lab.mql5_export.introspector import RiskConfig, SizingConfig
 from trade_lab.mql5_export.ml_introspector import (
     MLLayerConfig,
     MLStrategyConfig,
@@ -24,6 +24,7 @@ from trade_lab.mql5_export.ml_introspector import (
 )
 from trade_lab.mql5_export.ml_validator import validate_ml_strategy
 from trade_lab.mql5_export.validators import ValidationResult
+from trade_lab.risk_management import FixedTP, MovingAverageTS
 from trade_lab.sizing.fixed import FixedPositionSizer
 from trade_lab.sizing.risk_based import RiskBasedPositionSizer
 from trade_lab.strategies.ml_strategy import MLStrategy
@@ -245,6 +246,31 @@ def test_ml_introspector_builds_dense_config_and_skips_non_dense(monkeypatch):
     assert l1.biases == [0.0]
 
 
+def test_ml_introspector_extracts_risk_configuration(monkeypatch):
+    keras = _install_fake_keras(monkeypatch)
+    keras_model = types.SimpleNamespace(
+        layers=[
+            keras.layers.Dense(
+                units=1,
+                activation="tanh",
+                kernel=np.array([[0.5]]),
+                bias=np.array([0.1]),
+            )
+        ]
+    )
+    strategy = _strategy_with_wrapper(keras_model=keras_model, input_names=["feat_a"])
+    strategy.take_profit = FixedTP(12.0)
+    strategy.trailing_stop = MovingAverageTS("ema__ema_20", step_points=3.0)
+
+    cfg = MLStrategyIntrospector().introspect(strategy)
+
+    assert isinstance(cfg.risk, RiskConfig)
+    assert cfg.risk.tp_type == "fixed"
+    assert cfg.risk.tp_base_points == pytest.approx(12.0)
+    assert cfg.risk.ts_type == "ma"
+    assert cfg.risk.ts_step_points == pytest.approx(3.0)
+
+
 def test_validate_ml_strategy_rejects_non_ml_strategy():
     result = validate_ml_strategy(object())
     assert result.is_valid is False
@@ -360,6 +386,27 @@ def test_validate_ml_strategy_emits_sigmoid_and_large_model_warnings(monkeypatch
     assert any("Model has 10,301 parameters" in w for w in result.warnings)
 
 
+def test_validate_ml_strategy_warns_for_manual_risk_mappings(monkeypatch):
+    keras = _install_fake_keras(monkeypatch)
+    keras_model = types.SimpleNamespace(
+        layers=[
+            keras.layers.Dense(
+                units=1,
+                activation="tanh",
+                kernel=np.array([[1.0]]),
+                bias=np.array([0.0]),
+            )
+        ]
+    )
+    strategy = _strategy_with_wrapper(keras_model=keras_model, input_names=["feat_a"])
+    strategy.trailing_stop = MovingAverageTS("ema__ema_20")
+
+    result = validate_ml_strategy(strategy)
+
+    assert result.is_valid is True
+    assert any("MovingAverageTS" in warning for warning in result.warnings)
+
+
 def test_export_ml_to_mql5_writes_file_and_prints_warnings(
     monkeypatch, tmp_path, capsys
 ):
@@ -392,6 +439,46 @@ def test_export_ml_to_mql5_writes_file_and_prints_warnings(
     assert "Layer 0: Dense(2" in result.indicators_exported[1]
     assert "MagicNumber    = 77" in result.code
     assert "Feature_0_feat_a" in result.code
+
+
+def test_export_ml_to_mql5_renders_risk_management_inputs(monkeypatch, tmp_path):
+    risk_cfg = RiskConfig(
+        has_tp=True,
+        tp_type="fixed",
+        tp_base_points=25.0,
+        has_sl=True,
+        sl_type="signal_strength",
+        sl_base_points=15.0,
+        has_ts=True,
+        ts_type="fixed",
+        ts_base_points=12.0,
+        ts_step_points=3.0,
+    )
+    monkeypatch.setattr(
+        ml_validator_module,
+        "validate_ml_strategy",
+        lambda _strategy: ValidationResult(is_valid=True, errors=[], warnings=[]),
+    )
+    monkeypatch.setattr(
+        MLStrategyIntrospector,
+        "introspect",
+        lambda self, _strategy: MLStrategyConfig(
+            **{
+                **_sample_ml_config().__dict__,
+                "risk": risk_cfg,
+            }
+        ),
+    )
+
+    out_file = tmp_path / "ml_risk_export.mq5"
+    result = export_ml_to_mql5(strategy=object(), output_path=str(out_file))
+
+    assert 'input group            "=== Risk Management ==="' in result.code
+    assert "TP_BasePoints = 25.0000;" in result.code
+    assert "SL_BasePoints = 15.0000;" in result.code
+    assert "TS_BasePoints = 12.0000;" in result.code
+    assert "TS_StepPoints = 3.0000;" in result.code
+    assert "void ManageTrailingStop(double signal_strength)" in result.code
 
 
 def test_export_ml_to_mql5_raises_when_validation_fails(monkeypatch, tmp_path):

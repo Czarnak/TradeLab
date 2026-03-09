@@ -9,9 +9,12 @@ import pytest
 from trade_lab.indicators.base import BaseIndicator
 from trade_lab.indicators.moving_averages import CMA, EMA, SMA
 from trade_lab.indicators.oscillators import MACD, RSI
+from trade_lab.indicators.statistical import LaplaceKernel
 from trade_lab.mql5_export import export_to_mql5
+from trade_lab.mql5_export.introspector import RiskConfig
 from trade_lab.mql5_export.introspector import StrategyIntrospector
 from trade_lab.mql5_export.validators import validate_strategy
+from trade_lab.risk_management import FixedTP, MovingAverageSL, SignalStrengthTS
 from trade_lab.signals.base import BaseSignal
 from trade_lab.signals.signals import OHLC
 from trade_lab.signals.temporal import CyclicalTemporalSignal
@@ -140,6 +143,37 @@ def test_strategy_introspector_builds_names_and_deduplicates_signals():
     assert config.allow_short is False
 
 
+def test_strategy_introspector_extracts_risk_configuration():
+    strategy = StandardStrategy(indicators=[(SMA(period=10), 1.0)])
+    strategy.take_profit = FixedTP(25.0)
+    strategy.stop_loss = MovingAverageSL("ema__ema_20")
+    strategy.trailing_stop = SignalStrengthTS(30.0, step_points=4.0)
+
+    config = StrategyIntrospector().introspect(strategy)
+
+    assert isinstance(config.risk, RiskConfig)
+    assert config.risk.has_tp is True
+    assert config.risk.tp_type == "fixed"
+    assert config.risk.tp_base_points == pytest.approx(25.0)
+    assert config.risk.has_sl is True
+    assert config.risk.sl_type == "ma"
+    assert config.risk.sl_base_points is None
+    assert config.risk.has_ts is True
+    assert config.risk.ts_type == "signal_strength"
+    assert config.risk.ts_base_points == pytest.approx(30.0)
+    assert config.risk.ts_step_points == pytest.approx(4.0)
+
+
+def test_validate_strategy_warns_for_manual_risk_mappings():
+    strategy = StandardStrategy(indicators=[(SMA(period=10), 1.0)])
+    strategy.stop_loss = MovingAverageSL("ema__ema_20")
+
+    result = validate_strategy(strategy)
+
+    assert result.is_valid is True
+    assert any("MovingAverageSL" in warning for warning in result.warnings)
+
+
 def test_export_to_mql5_writes_file_and_returns_metadata(tmp_path: Path):
     strategy = StandardStrategy(
         indicators=[
@@ -170,6 +204,52 @@ def test_export_to_mql5_writes_file_and_returns_metadata(tmp_path: Path):
     assert "PERIOD_M15" in result.code
     assert "MagicNumber    = 42" in result.code
     assert out_file.read_bytes().startswith(b"\xef\xbb\xbf")
+
+
+def test_export_to_mql5_renders_risk_inputs_and_trade_logic(tmp_path: Path):
+    strategy = StandardStrategy(
+        indicators=[(SMA(period=10), 1.0)],
+        entry_threshold=0.35,
+        exit_threshold=0.1,
+    )
+    strategy.take_profit = FixedTP(40.0)
+    strategy.trailing_stop = SignalStrengthTS(20.0, step_points=5.0)
+
+    out_file = tmp_path / "risk_ea.mq5"
+    result = export_to_mql5(strategy, output_path=str(out_file), ea_name="Risk EA")
+
+    assert result.validation.is_valid
+    assert 'input group            "=== Risk Management ==="' in result.code
+    assert "TP_BasePoints = 40.0000;" in result.code
+    assert "TS_BasePoints = 20.0000;" in result.code
+    assert "TS_StepPoints = 5.0000;" in result.code
+    assert "void ManageTrailingStop(double signal_strength)" in result.code
+    assert (
+        'trade.Buy(lots, _Symbol, ask, sl_price, tp_price, "TradeLab");' in result.code
+    )
+
+
+def test_export_to_mql5_supports_statistical_kernel_indicators(tmp_path: Path):
+    strategy = StandardStrategy(
+        indicators=[
+            (LaplaceKernel(bandwidth=7, deviations=1.5), 0.8),
+            (RSI(period=14), 0.2),
+        ],
+        position_sizer=FixedPositionSizer(0.01),
+        entry_threshold=0.25,
+        exit_threshold=0.1,
+    )
+
+    out_file = tmp_path / "kernel_ea.mq5"
+    result = export_to_mql5(strategy, output_path=str(out_file), ea_name="Kernel EA")
+
+    assert result.validation.is_valid
+    assert "GetLaplaceKernelStrength()" in result.code
+    assert "TradeLabKernelEstimate(" in result.code
+    assert "Laplace_Kernel_Bandwidth = 7" in result.code
+    assert "Laplace_Kernel_Deviations = 1.5000" in result.code
+    assert "Laplace_Kernel_Price = PRICE_CLOSE" in result.code
+    assert any("LaplaceKernel" in line for line in result.indicators_exported)
 
 
 def test_export_to_mql5_raises_for_invalid_strategy(tmp_path: Path):

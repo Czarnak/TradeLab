@@ -1,0 +1,133 @@
+//------------------------------------------------------------------
+// Kernel regression helpers shared by all statistical indicators.
+// Mirrors src/trade_lab/indicators/statistical.py for the causal
+// non-repainting regression path used in backtests.
+//------------------------------------------------------------------
+#define TRADELAB_KERNEL_TRIANGULAR     1
+#define TRADELAB_KERNEL_GAUSSIAN       2
+#define TRADELAB_KERNEL_EPANECHNIKOV   3
+#define TRADELAB_KERNEL_LOGISTIC       4
+#define TRADELAB_KERNEL_LOG_LOGISTIC   5
+#define TRADELAB_KERNEL_COSINE         6
+#define TRADELAB_KERNEL_SINC           7
+#define TRADELAB_KERNEL_LAPLACE        8
+#define TRADELAB_KERNEL_QUARTIC        9
+#define TRADELAB_KERNEL_PARABOLIC      10
+#define TRADELAB_KERNEL_EXPONENTIAL    11
+#define TRADELAB_KERNEL_SILVERMAN      12
+#define TRADELAB_KERNEL_CAUCHY         13
+#define TRADELAB_KERNEL_TENT           14
+#define TRADELAB_KERNEL_WAVE           15
+#define TRADELAB_KERNEL_POWER          16
+#define TRADELAB_KERNEL_MORTERS        17
+
+double TradeLabKernelWeight(int kernel_kind, double source, double bandwidth)
+  {
+   double scaled = source / bandwidth;
+   double abs_scaled = MathAbs(scaled);
+
+   switch(kernel_kind)
+     {
+      case TRADELAB_KERNEL_TRIANGULAR:
+      case TRADELAB_KERNEL_TENT:
+         return abs_scaled <= 1.0 ? 1.0 - abs_scaled : 0.0;
+
+      case TRADELAB_KERNEL_GAUSSIAN:
+         return MathExp(-(scaled * scaled) / 2.0) / MathSqrt(2.0 * M_PI);
+
+      case TRADELAB_KERNEL_EPANECHNIKOV:
+         return abs_scaled <= 1.0 ? 0.75 * (1.0 - scaled * scaled) : 0.0;
+
+      case TRADELAB_KERNEL_LOGISTIC:
+         return 1.0 / (MathExp(scaled) + 2.0 + MathExp(-scaled));
+
+      case TRADELAB_KERNEL_LOG_LOGISTIC:
+         return 1.0 / MathPow(1.0 + abs_scaled, 2.0);
+
+      case TRADELAB_KERNEL_COSINE:
+         return abs_scaled <= 1.0 ? (M_PI / 4.0) * MathCos((M_PI / 2.0) * scaled) : 0.0;
+
+      case TRADELAB_KERNEL_SINC:
+         if(source == 0.0) return 1.0;
+         double sinc_angle = M_PI * source / bandwidth;
+         return MathSin(sinc_angle) / sinc_angle;
+
+      case TRADELAB_KERNEL_LAPLACE:
+         return (1.0 / (2.0 * bandwidth)) * MathExp(-abs_scaled);
+
+      case TRADELAB_KERNEL_QUARTIC:
+         return abs_scaled <= 1.0 ? (15.0 / 16.0) * MathPow(1.0 - scaled * scaled, 2.0) : 0.0;
+
+      case TRADELAB_KERNEL_PARABOLIC:
+         return abs_scaled <= 1.0 ? 1.0 - scaled * scaled : 0.0;
+
+      case TRADELAB_KERNEL_EXPONENTIAL:
+         return (1.0 / bandwidth) * MathExp(-abs_scaled);
+
+      case TRADELAB_KERNEL_SILVERMAN:
+         return abs_scaled <= 0.5
+                ? 0.5 * MathExp(-scaled / 2.0) * MathSin(scaled / 2.0 + M_PI / 4.0)
+                : 0.0;
+
+      case TRADELAB_KERNEL_CAUCHY:
+         return 1.0 / (M_PI * bandwidth * (1.0 + scaled * scaled));
+
+      case TRADELAB_KERNEL_WAVE:
+         return abs_scaled <= 1.0 ? (1.0 - abs_scaled) * MathCos(M_PI * scaled) : 0.0;
+
+      case TRADELAB_KERNEL_POWER:
+         return abs_scaled <= 1.0 ? MathPow(1.0 - MathPow(abs_scaled, 3.0), 3.0) : 0.0;
+
+      case TRADELAB_KERNEL_MORTERS:
+         return abs_scaled <= M_PI ? (1.0 + MathCos(scaled)) / (2.0 * M_PI * bandwidth) : 0.0;
+     }
+
+   return 0.0;
+  }
+
+double TradeLabKernelEstimate(int shift,
+                              int bandwidth,
+                              ENUM_APPLIED_PRICE price,
+                              int kernel_kind)
+  {
+   if(bandwidth < 1) return 0.0;
+
+   double denominator = (double)(bandwidth * bandwidth);
+   double weighted_sum = 0.0;
+   double weight_sum = 0.0;
+
+   for(int i = 0; i < bandwidth; i++)
+     {
+      double kernel_source = ((double)(i * i)) / denominator;
+      double weight = TradeLabKernelWeight(kernel_kind, kernel_source, 1.0);
+      weighted_sum += GetAppliedPrice(shift + i, price) * weight;
+      weight_sum += weight;
+     }
+
+   return weight_sum != 0.0 ? weighted_sum / weight_sum : 0.0;
+  }
+
+double TradeLabKernelScaledDeviation(int shift,
+                                     int bandwidth,
+                                     double deviations,
+                                     ENUM_APPLIED_PRICE price,
+                                     int kernel_kind)
+  {
+   if(bandwidth <= 1) return 0.0;
+
+   double residual_sum = 0.0;
+   for(int i = 0; i < bandwidth; i++)
+     {
+      int residual_shift = shift + i;
+      double estimate = TradeLabKernelEstimate(
+         residual_shift,
+         bandwidth,
+         price,
+         kernel_kind
+      );
+      double diff = GetAppliedPrice(residual_shift, price) - estimate;
+      residual_sum += diff * diff;
+     }
+
+   return MathSqrt(residual_sum / (bandwidth - 1)) * deviations;
+  }

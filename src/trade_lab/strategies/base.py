@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 import pandas as pd
+from trade_lab.risk_management import BaseStopLoss, BaseTakeProfit, BaseTrailingStop
 from trade_lab.sizing.base import BasePositionSizer
 
 
@@ -28,6 +29,9 @@ class BaseStrategy(ABC):
         self.position_sizer = position_sizer
         self.entry_threshold = entry_threshold
         self.exit_threshold = exit_threshold
+        self.take_profit: BaseTakeProfit | None = None
+        self.stop_loss: BaseStopLoss | None = None
+        self.trailing_stop: BaseTrailingStop | None = None
 
     @abstractmethod
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:

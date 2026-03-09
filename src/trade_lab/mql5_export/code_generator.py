@@ -24,6 +24,26 @@ except ImportError as _exc:
 
 from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
 from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
+from trade_lab.indicators.statistical import (
+    CauchyKernel,
+    CosineKernel,
+    EpanechnikovKernel,
+    ExponentialKernel,
+    GaussianKernel,
+    LaplaceKernel,
+    LogLogisticKernel,
+    LogisticKernel,
+    MortersKernel,
+    ParabolicKernel,
+    PowerKernel,
+    QuarticKernel,
+    SilvermanKernel,
+    SincKernel,
+    SquareKernel,
+    TentKernel,
+    TriangularKernel,
+    WaveKernel,
+)
 from trade_lab.mql5_export.indicator_registry import (
     APPLIED_PRICE_MAP,
     INDICATOR_REGISTRY,
@@ -44,6 +64,24 @@ _INDICATOR_CLASS_MAP: dict[str, type] = {
     "macd": MACD,
     "momentum": Momentum,
     "larry_williams": LarryWilliams,
+    "triangular_kernel": TriangularKernel,
+    "gaussian_kernel": GaussianKernel,
+    "epanechnikov_kernel": EpanechnikovKernel,
+    "logistic_kernel": LogisticKernel,
+    "log_logistic_kernel": LogLogisticKernel,
+    "cosine_kernel": CosineKernel,
+    "sinc_kernel": SincKernel,
+    "laplace_kernel": LaplaceKernel,
+    "quartic_kernel": QuarticKernel,
+    "parabolic_kernel": ParabolicKernel,
+    "exponential_kernel": ExponentialKernel,
+    "silverman_kernel": SilvermanKernel,
+    "cauchy_kernel": CauchyKernel,
+    "tent_kernel": TentKernel,
+    "wave_kernel": WaveKernel,
+    "power_kernel": PowerKernel,
+    "morters_kernel": MortersKernel,
+    "square_kernel": SquareKernel,
 }
 
 
@@ -104,7 +142,14 @@ def _enrich_indicator(ind) -> dict:
     """
     cls = _INDICATOR_CLASS_MAP[ind.indicator_type]
     desc = INDICATOR_REGISTRY[cls]
-    column = ind.params.get("column", "Close")
+    price_source = ind.params.get("price_source")
+    column = ind.params.get("column")
+    applied_price_key = None
+    if column is not None:
+        applied_price_key = column
+    elif price_source is not None:
+        applied_price_key = str(price_source).capitalize()
+
     return {
         # --- IndicatorConfig fields ---
         "indicator_type": ind.indicator_type,
@@ -123,8 +168,12 @@ def _enrich_indicator(ind) -> dict:
         "ma_method": desc.ma_method,
         "n_buffers": desc.n_buffers,
         # --- Computed convenience fields ---
-        "applied_price": APPLIED_PRICE_MAP.get(column, "PRICE_CLOSE"),
+        "applied_price": APPLIED_PRICE_MAP.get(applied_price_key, "PRICE_CLOSE"),
         "is_ma_type": ind.indicator_type in ("sma", "ema", "wma"),
+        "is_kernel_type": ind.indicator_type.endswith("_kernel"),
+        "kernel_variant": ind.params.get(
+            "kernel", ind.class_name.replace("Kernel", "")
+        ),
     }
 
 

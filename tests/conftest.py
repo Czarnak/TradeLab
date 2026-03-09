@@ -1,12 +1,30 @@
 import sys
 import types
+import shutil
+import uuid
 from pathlib import Path
 from enum import Enum
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+_LOCAL_PYTEST_TEMP = ROOT / "test_tmp"
+_LOCAL_PYTEST_TEMP.mkdir(exist_ok=True)
+
+
+@pytest.fixture
+def tmp_path():
+    path = _LOCAL_PYTEST_TEMP / f"pytest-{uuid.uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
 
 try:
     import plotly.graph_objects  # noqa: F401

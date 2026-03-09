@@ -186,6 +186,13 @@ class BacktestEngine:
         entry_date = None
         entry_bar = 0
         entry_comm = 0.0
+        direction = 0
+        tp_level: float | None = None
+        sl_level: float | None = None
+        ts_level: float | None = None
+        tp_obj = None
+        sl_obj = None
+        ts_obj = None
 
         equity_arr = np.empty(n)
         trades: list[dict] = []
@@ -195,19 +202,102 @@ class BacktestEngine:
         allow_long = self.strategy.allow_long
         allow_short = self.strategy.allow_short
 
+        def _active_stop_reason(
+            stop_loss_level: float | None,
+            trailing_stop_level: float | None,
+            trade_direction: int,
+        ) -> str:
+            if stop_loss_level is not None and trailing_stop_level is not None:
+                if trade_direction == 1:
+                    return "ts" if trailing_stop_level >= stop_loss_level else "sl"
+                return "ts" if trailing_stop_level <= stop_loss_level else "sl"
+            return "sl" if stop_loss_level is not None else "ts"
+
+        def _reset_risk_state() -> None:
+            nonlocal direction, tp_level, sl_level, ts_level, tp_obj, sl_obj, ts_obj
+            direction = 0
+            tp_level = None
+            sl_level = None
+            ts_level = None
+            tp_obj = None
+            sl_obj = None
+            ts_obj = None
+
         for i in range(n):
             price = closes[i]
             sig = signals[i]
-            equity = cash + pos * (price - entry_price) / self.leverage
-
-            # Skip bars with no signal or depleted equity
-            if np.isnan(sig) or equity <= 0:
-                equity_arr[i] = max(equity, 0.0)
-                continue
 
             # ---- Close existing position if triggered ----
             if pos > 0:  # long
-                if sig < xt or (allow_short and sig < -et):
+                bar = df.iloc[i]
+                high = df["High"].iloc[i]
+                low = df["Low"].iloc[i]
+
+                if ts_obj and ts_level is not None and not np.isnan(sig):
+                    ts_level = ts_obj.update(ts_level, direction, sig, bar)
+
+                active_sl = None
+                if sl_level is not None and ts_level is not None:
+                    active_sl = max(sl_level, ts_level)
+                elif sl_level is not None:
+                    active_sl = sl_level
+                elif ts_level is not None:
+                    active_sl = ts_level
+
+                tp_hit = tp_level is not None and high >= tp_level
+                sl_hit = active_sl is not None and low <= active_sl
+
+                if tp_hit:
+                    exec_price = tp_level
+                    comm = abs(pos) * exec_price * self.commission
+                    proceeds = pos * exec_price - comm
+                    pnl = (proceeds - (pos * entry_price + entry_comm)) / self.leverage
+                    cash += pnl
+                    trades.append(
+                        {
+                            "direction": "long",
+                            "entry_date": entry_date,
+                            "exit_date": dates[i],
+                            "entry_price": entry_price,
+                            "exit_price": exec_price,
+                            "size": pos,
+                            "pnl": pnl,
+                            "commission": entry_comm + comm,
+                            "bars_held": i - entry_bar,
+                            "exit_reason": "tp",
+                        }
+                    )
+                    pos = 0.0
+                    _reset_risk_state()
+
+                elif sl_hit:
+                    exec_price = active_sl
+                    comm = abs(pos) * exec_price * self.commission
+                    proceeds = pos * exec_price - comm
+                    pnl = (proceeds - (pos * entry_price + entry_comm)) / self.leverage
+                    cash += pnl
+                    trades.append(
+                        {
+                            "direction": "long",
+                            "entry_date": entry_date,
+                            "exit_date": dates[i],
+                            "entry_price": entry_price,
+                            "exit_price": exec_price,
+                            "size": pos,
+                            "pnl": pnl,
+                            "commission": entry_comm + comm,
+                            "bars_held": i - entry_bar,
+                            "exit_reason": _active_stop_reason(
+                                sl_level,
+                                ts_level,
+                                direction,
+                            ),
+                        }
+                    )
+                    pos = 0.0
+                    _reset_risk_state()
+
+                elif sig < xt or (allow_short and sig < -et):
                     exec_price = price * (1 - self.slippage)
                     comm = abs(pos) * exec_price * self.commission
                     proceeds = pos * exec_price - comm
@@ -224,12 +314,82 @@ class BacktestEngine:
                             "pnl": pnl,
                             "commission": entry_comm + comm,
                             "bars_held": i - entry_bar,
+                            "exit_reason": "signal",
                         }
                     )
                     pos = 0.0
+                    _reset_risk_state()
 
             elif pos < 0:  # short
-                if sig > -xt or (allow_long and sig > et):
+                bar = df.iloc[i]
+                high = df["High"].iloc[i]
+                low = df["Low"].iloc[i]
+
+                if ts_obj and ts_level is not None and not np.isnan(sig):
+                    ts_level = ts_obj.update(ts_level, direction, sig, bar)
+
+                active_sl = None
+                if sl_level is not None and ts_level is not None:
+                    active_sl = min(sl_level, ts_level)
+                elif sl_level is not None:
+                    active_sl = sl_level
+                elif ts_level is not None:
+                    active_sl = ts_level
+
+                tp_hit = tp_level is not None and low <= tp_level
+                sl_hit = active_sl is not None and high >= active_sl
+
+                if tp_hit:
+                    exec_price = tp_level
+                    comm = abs(pos) * exec_price * self.commission
+                    cost = abs(pos) * exec_price + comm
+                    pnl = (abs(pos) * entry_price - cost - entry_comm) / self.leverage
+                    cash += pnl
+                    trades.append(
+                        {
+                            "direction": "short",
+                            "entry_date": entry_date,
+                            "exit_date": dates[i],
+                            "entry_price": entry_price,
+                            "exit_price": exec_price,
+                            "size": abs(pos),
+                            "pnl": pnl,
+                            "commission": entry_comm + comm,
+                            "bars_held": i - entry_bar,
+                            "exit_reason": "tp",
+                        }
+                    )
+                    pos = 0.0
+                    _reset_risk_state()
+
+                elif sl_hit:
+                    exec_price = active_sl
+                    comm = abs(pos) * exec_price * self.commission
+                    cost = abs(pos) * exec_price + comm
+                    pnl = (abs(pos) * entry_price - cost - entry_comm) / self.leverage
+                    cash += pnl
+                    trades.append(
+                        {
+                            "direction": "short",
+                            "entry_date": entry_date,
+                            "exit_date": dates[i],
+                            "entry_price": entry_price,
+                            "exit_price": exec_price,
+                            "size": abs(pos),
+                            "pnl": pnl,
+                            "commission": entry_comm + comm,
+                            "bars_held": i - entry_bar,
+                            "exit_reason": _active_stop_reason(
+                                sl_level,
+                                ts_level,
+                                direction,
+                            ),
+                        }
+                    )
+                    pos = 0.0
+                    _reset_risk_state()
+
+                elif sig > -xt or (allow_long and sig > et):
                     exec_price = price * (1 + self.slippage)
                     comm = abs(pos) * exec_price * self.commission
                     cost = abs(pos) * exec_price + comm
@@ -246,9 +406,20 @@ class BacktestEngine:
                             "pnl": pnl,
                             "commission": entry_comm + comm,
                             "bars_held": i - entry_bar,
+                            "exit_reason": "signal",
                         }
                     )
                     pos = 0.0
+                    _reset_risk_state()
+
+            # Skip new entries on bars with no signal or depleted equity.
+            current_equity = cash + pos * (price - entry_price) / self.leverage
+            if np.isnan(sig) or current_equity <= 0:
+                equity_arr[i] = max(
+                    current_equity,
+                    0.0,
+                )
+                continue
 
             # ---- Open new position if flat ----
             if pos == 0.0:
@@ -272,6 +443,26 @@ class BacktestEngine:
                         entry_date = dates[i]
                         entry_bar = i
                         entry_comm = comm
+                        direction = 1
+                        bar = df.iloc[i]
+                        tp_obj = self.strategy.take_profit
+                        sl_obj = self.strategy.stop_loss
+                        ts_obj = self.strategy.trailing_stop
+                        tp_level = (
+                            tp_obj.compute(exec_price, direction, sig, bar)
+                            if tp_obj
+                            else None
+                        )
+                        sl_level = (
+                            sl_obj.compute(exec_price, direction, sig, bar)
+                            if sl_obj
+                            else None
+                        )
+                        ts_level = (
+                            ts_obj.compute_initial(exec_price, direction, sig, bar)
+                            if ts_obj
+                            else None
+                        )
 
                 elif allow_short and sig < -et:
                     exec_price = price * (1 - self.slippage)
@@ -293,6 +484,26 @@ class BacktestEngine:
                         entry_date = dates[i]
                         entry_bar = i
                         entry_comm = comm
+                        direction = -1
+                        bar = df.iloc[i]
+                        tp_obj = self.strategy.take_profit
+                        sl_obj = self.strategy.stop_loss
+                        ts_obj = self.strategy.trailing_stop
+                        tp_level = (
+                            tp_obj.compute(exec_price, direction, sig, bar)
+                            if tp_obj
+                            else None
+                        )
+                        sl_level = (
+                            sl_obj.compute(exec_price, direction, sig, bar)
+                            if sl_obj
+                            else None
+                        )
+                        ts_level = (
+                            ts_obj.compute_initial(exec_price, direction, sig, bar)
+                            if ts_obj
+                            else None
+                        )
 
             equity_arr[i] = cash + pos * (price - entry_price) / self.leverage
 

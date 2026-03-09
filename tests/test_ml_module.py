@@ -250,7 +250,8 @@ def test_dense_model_builder_uses_expected_keras_calls(monkeypatch):
     assert [d["activation"] for d in calls["dense_inits"]] == ["relu", "relu", "tanh"]
     assert calls["dropout_rates"] == [0.1, 0.1]
     assert calls["adam_lrs"] == [0.005]
-    assert calls["compile"][0]["loss"] == "mse"
+    assert callable(calls["compile"][0]["loss"])
+    assert calls["compile"][0]["loss"].__name__ == "directional_loss"
     assert model.compiled is not None
 
 
@@ -266,7 +267,8 @@ def test_lstm_model_builder_uses_expected_keras_calls(monkeypatch):
     assert [d["units"] for d in calls["dense_inits"]] == [1]
     assert [d["activation"] for d in calls["dense_inits"]] == ["tanh"]
     assert calls["adam_lrs"] == [0.01]
-    assert calls["compile"][0]["loss"] == "mse"
+    assert callable(calls["compile"][0]["loss"])
+    assert calls["compile"][0]["loss"].__name__ == "directional_loss"
     assert model.compiled is not None
 
 

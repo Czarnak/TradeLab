@@ -1,0 +1,49 @@
+{% set kernel_constant_map = {
+   'Triangular': 'TRADELAB_KERNEL_TRIANGULAR',
+   'Gaussian': 'TRADELAB_KERNEL_GAUSSIAN',
+   'Epanechnikov': 'TRADELAB_KERNEL_EPANECHNIKOV',
+   'Logistic': 'TRADELAB_KERNEL_LOGISTIC',
+   'Log Logistic': 'TRADELAB_KERNEL_LOG_LOGISTIC',
+   'Cosine': 'TRADELAB_KERNEL_COSINE',
+   'Sinc': 'TRADELAB_KERNEL_SINC',
+   'Laplace': 'TRADELAB_KERNEL_LAPLACE',
+   'Quartic': 'TRADELAB_KERNEL_QUARTIC',
+   'Parabolic': 'TRADELAB_KERNEL_PARABOLIC',
+   'Exponential': 'TRADELAB_KERNEL_EXPONENTIAL',
+   'Silverman': 'TRADELAB_KERNEL_SILVERMAN',
+   'Cauchy': 'TRADELAB_KERNEL_CAUCHY',
+   'Tent': 'TRADELAB_KERNEL_TENT',
+   'Wave': 'TRADELAB_KERNEL_WAVE',
+   'Power': 'TRADELAB_KERNEL_POWER',
+   'Morters': 'TRADELAB_KERNEL_MORTERS'
+} %}
+{% set kernel_constant = kernel_constant_map.get(ind.kernel_variant, 'TRADELAB_KERNEL_LAPLACE') %}
+   int bandwidth = {{ ind.input_prefix }}_Bandwidth;
+   if(bandwidth < 1) return 0.0;
+
+   int required_bars = {{ ind.lag }} + 2 * bandwidth - 1;
+   if(iBars(_Symbol, PERIOD_CURRENT) < required_bars)
+      return 0.0;
+
+   double price = GetAppliedPrice({{ ind.lag }}, {{ ind.input_prefix }}_Price);
+   double estimate = TradeLabKernelEstimate(
+      {{ ind.lag }},
+      bandwidth,
+      {{ ind.input_prefix }}_Price,
+      {{ kernel_constant }}
+   );
+   double scaled_dev = TradeLabKernelScaledDeviation(
+      {{ ind.lag }},
+      bandwidth,
+      {{ ind.input_prefix }}_Deviations,
+      {{ ind.input_prefix }}_Price,
+      {{ kernel_constant }}
+   );
+   double fallback_std = RollingStd(
+      bandwidth,
+      {{ ind.lag }},
+      {{ ind.input_prefix }}_Price
+   );
+   double scale = scaled_dev > 0.0 ? scaled_dev : fallback_std;
+   if(scale == 0.0) return 0.0;
+   return MathTanh((price - estimate) / scale);

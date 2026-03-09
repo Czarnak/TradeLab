@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-
+from enum import Enum
 import pandas as pd
 
 
@@ -107,3 +107,10 @@ class BaseSignal(ABC):
         and shift. Convention: ``'signal__<n>'``.
         """
         ...
+
+
+class PriceSource(Enum):
+    OPEN = "open"
+    HIGH = "high"
+    LOW = "low"
+    CLOSE = "close"

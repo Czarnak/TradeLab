@@ -14,12 +14,55 @@ from trade_lab.indicators.oscillators import (
     Stochastic,
     TRIX,
 )
+from trade_lab.indicators.statistical import (
+    BaseKernel,
+    CauchyKernel,
+    CosineKernel,
+    EpanechnikovKernel,
+    ExponentialKernel,
+    GaussianKernel,
+    KernelType,
+    LaplaceKernel,
+    LogLogisticKernel,
+    LogisticKernel,
+    MortersKernel,
+    ParabolicKernel,
+    PowerKernel,
+    QuarticKernel,
+    SilvermanKernel,
+    SincKernel,
+    SquareKernel,
+    TentKernel,
+    TriangularKernel,
+    WaveKernel,
+)
 from trade_lab.indicators.volume import CHO, OBV, ForceIndex
 from trade_lab.indicators.trend import ADX, ATR, MassIndex
 
 __all__ = [
     # Base
     "BaseIndicator",
+    # Statistical / kernel regression
+    "KernelType",
+    "BaseKernel",
+    "TriangularKernel",
+    "GaussianKernel",
+    "EpanechnikovKernel",
+    "LogisticKernel",
+    "LogLogisticKernel",
+    "CosineKernel",
+    "SincKernel",
+    "LaplaceKernel",
+    "QuarticKernel",
+    "ParabolicKernel",
+    "ExponentialKernel",
+    "SilvermanKernel",
+    "CauchyKernel",
+    "TentKernel",
+    "WaveKernel",
+    "PowerKernel",
+    "MortersKernel",
+    "SquareKernel",
     # Moving averages
     "SMA",
     "EMA",

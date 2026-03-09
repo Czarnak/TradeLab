@@ -9,6 +9,7 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
 - `signals` (feature generation),
 - `indicators` (market state transforms + signal-strength mapping),
 - `strategies` (how indicator strengths are combined),
+- `risk_management` (take-profit, stop-loss, and trailing-stop policies),
 - `position sizing`,
 - `backtesting` (execution simulation, metrics, report generation),
 - `monte_carlo` (synthetic data generation and robustness analysis),
@@ -20,11 +21,16 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
 - Event-driven backtesting engine with:
   - long/short support,
   - commission and slippage modeling,
-  - trade logging and equity curve output.
+  - trade logging, exit reasons, and equity curve output,
+  - take-profit, stop-loss, and trailing-stop handling with TP/SL/TS priority over signal exits.
 - Composable signal and indicator pipelines.
 - Strategy abstractions:
   - `StandardStrategy` for weighted indicator combinations,
   - `MLStrategy` for model-driven predictions.
+- Risk-management primitives:
+  - take profit: `FixedTP`, `SignalStrengthTP`,
+  - stop loss: `FixedSL`, `SignalStrengthSL`, `MovingAverageSL`, `ParabolicSARSL`,
+  - trailing stop: `FixedTS`, `SignalStrengthTS`, `MovingAverageTS`, `ParabolicSARTS`.
 - Position sizers:
   - fixed-fraction sizing,
   - risk-based sizing with volatility input.
@@ -32,6 +38,7 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
   - moving averages: `SMA`, `EMA`, `WMA`, `CMA`, `DEMA`, `TEMA`,
   - oscillators: `RSI`, `MACD`, `Momentum`, `LarryWilliams`, `BollingerBands`, `CCI`, `Stochastic`, `ROC`, `TRIX`, `DPO`, `RVI`, `DeMarker`,
   - volume/trend: `OBV`, `ForceIndex`, `CHO`, `ADX`, `ATR`, `MassIndex`,
+  - statistical/kernel regression: `TriangularKernel`, `GaussianKernel`, `EpanechnikovKernel`, `LogisticKernel`, `LogLogisticKernel`, `CosineKernel`, `SincKernel`, `LaplaceKernel`, `QuarticKernel`, `ParabolicKernel`, `ExponentialKernel`, `SilvermanKernel`, `CauchyKernel`, `TentKernel`, `WaveKernel`, `PowerKernel`, `MortersKernel`, `SquareKernel`,
   - `OHLC`, `HeikinAshi`, `CyclicalTemporalSignal`.
 - Performance metrics and HTML backtest report generation.
 - Monte Carlo robustness testing:
@@ -53,7 +60,8 @@ TradeLab is a modular Python framework for strategy backtesting with a clear sep
   - `export_ml_to_mql5` generates `.mq5` code from `MLStrategy` with hardcoded Dense network weights,
   - `export_ml_to_mql5_onnx` generates `.mq5` code plus an `.onnx` model file for MT5 runtime inference,
   - pre-export validation for standard, ML hardcoded, and ML ONNX paths,
-  - template-driven support for signals/sizing/indicator logic (standard path), Dense forward-pass logic (ML path), and ONNX runtime wiring (ML ONNX path).
+  - template-driven support for signals/sizing/indicator logic (standard path), including statistical/kernel-regression indicator templates and shared kernel helper functions,
+  - Dense forward-pass logic (ML path), and ONNX runtime wiring (ML ONNX path).
 
 ## Installation
 
@@ -115,6 +123,7 @@ This example:
 ```python
 from trade_lab.backtesting import BacktestEngine, generate_report
 from trade_lab.indicators import EMA
+from trade_lab.risk_management import FixedSL, FixedTP, SignalStrengthTS
 from trade_lab.strategies import StandardStrategy
 fast_ema = EMA(period=20)
 slow_ema = EMA(period=50)
@@ -126,6 +135,10 @@ strategy = StandardStrategy(
     entry_threshold=0.2,
     exit_threshold=0.05,
 )
+
+strategy.take_profit = FixedTP(base_points=8.0)
+strategy.stop_loss = FixedSL(base_points=5.0)
+strategy.trailing_stop = SignalStrengthTS(base_points=6.0, step_points=1.0)
 
 engine = BacktestEngine(
     strategy=strategy,
@@ -141,6 +154,16 @@ result = engine.run()
 generate_report(result, output_path="outputs/backtest_report.html")
 print(result.metrics)
 print(result.trade_log.tail())
+```
+
+Risk objects are plain strategy attributes. They are not constructor parameters:
+
+```python
+from trade_lab.risk_management import FixedSL, FixedTP, SignalStrengthTS
+
+strategy.take_profit = FixedTP(base_points=8.0)
+strategy.stop_loss = FixedSL(base_points=5.0)
+strategy.trailing_stop = SignalStrengthTS(base_points=6.0, step_points=1.0)
 ```
 
 ## Parameter Optimisation
@@ -334,14 +357,28 @@ Advisors (`.mq5`).
 
 Supported components:
 
-- Indicators: `SMA`, `EMA`, `WMA`, `CMA`, `RSI`, `MACD`, `Momentum`, `LarryWilliams`
+- Indicators: `SMA`, `EMA`, `WMA`, `CMA`, `RSI`, `MACD`, `Momentum`, `LarryWilliams`, and the statistical/kernel-regression family (`TriangularKernel`, `GaussianKernel`, `EpanechnikovKernel`, `LogisticKernel`, `LogLogisticKernel`, `CosineKernel`, `SincKernel`, `LaplaceKernel`, `QuarticKernel`, `ParabolicKernel`, `ExponentialKernel`, `SilvermanKernel`, `CauchyKernel`, `TentKernel`, `WaveKernel`, `PowerKernel`, `MortersKernel`, `SquareKernel`)
 - Upstream signals: `OHLC`, `HeikinAshi`, `CyclicalTemporalSignal`
 - Position sizing: `None`, `FixedPositionSizer`, `RiskBasedPositionSizer`
+- Risk management:
+  - directly exportable: `FixedTP`, `SignalStrengthTP`, `FixedSL`, `SignalStrengthSL`, `FixedTS`, `SignalStrengthTS`
+  - warning-only/manual MT5 mapping: `MovingAverageSL`, `MovingAverageTS`, `ParabolicSARSL`, `ParabolicSARTS`
 
 Indicator registry coverage (`indicator_registry.py`) additionally includes
 descriptors for: `DEMA`, `TEMA`, `BollingerBands`, `CCI`, `Stochastic`, `ROC`,
 `TRIX`, `DPO`, `RVI`, `DeMarker`, `OBV`, `ForceIndex`, `CHO`, `ADX`, `ATR`,
-`MassIndex`.
+`MassIndex`, plus the shared statistical/kernel descriptor used by the
+kernel-regression exporters.
+
+The standard-path templates now include shared kernel helpers plus a dedicated
+Jinja2 sub-template for statistical indicators, so exported `.mq5` files can
+recreate the non-repainting kernel estimate, deviation scaling, and
+`tanh((price - estimate) / scale)` signal-strength mapping used in Python.
+
+When exportable risk objects are present, the generated EAs also emit risk
+inputs, pass absolute TP/SL prices to `trade.Buy()` / `trade.Sell()`, and add
+broker-side trailing-stop management logic. Non-exportable MA/SAR risk objects
+produce warnings so they can be mapped manually in MT5.
 
 ```python
 from trade_lab.indicators import EMA, RSI
@@ -387,6 +424,8 @@ Validation contract (`validate_ml_strategy`) before export:
 - final Dense layer must have exactly `1` output unit,
 - `input_names` must be non-empty,
 - supported sizers: `None`, `FixedPositionSizer`, `RiskBasedPositionSizer`.
+- risk config is introspected too; fixed and signal-strength TP/SL/TS variants
+  are rendered directly, while MA/SAR variants emit warnings for manual MT5 mapping.
 
 Warnings (non-fatal):
 
@@ -503,6 +542,7 @@ src/trade_lab/
     base.py
     moving_averages.py
     oscillators.py
+    statistical.py
     trend.py
     volume.py
   ml/
@@ -543,6 +583,12 @@ src/trade_lab/
     objective.py
     optimizer.py
     result.py
+  risk_management/
+    __init__.py
+    base.py
+    take_profit.py
+    stop_loss.py
+    trailing_stop.py
   signals/
     base.py
     signals.py
@@ -570,8 +616,13 @@ Core modules:
 - [`src/trade_lab/indicators/base.py`][api-indicator-base]
 - [`src/trade_lab/indicators/moving_averages.py`][api-indicator-ma]
 - [`src/trade_lab/indicators/oscillators.py`][api-indicator-osc]
+- [`src/trade_lab/indicators/statistical.py`][api-indicator-stat]
 - [`src/trade_lab/indicators/trend.py`][api-indicator-trend]
 - [`src/trade_lab/indicators/volume.py`][api-indicator-volume]
+- [`src/trade_lab/risk_management/base.py`][api-risk-base]
+- [`src/trade_lab/risk_management/take_profit.py`][api-risk-tp]
+- [`src/trade_lab/risk_management/stop_loss.py`][api-risk-sl]
+- [`src/trade_lab/risk_management/trailing_stop.py`][api-risk-ts]
 - [`src/trade_lab/signals/base.py`][api-signal-base]
 - [`src/trade_lab/signals/signals.py`][api-signal-signals]
 - [`src/trade_lab/signals/temporal.py`][api-signal-temporal]
@@ -624,13 +675,13 @@ Examples:
 Run the full suite:
 
 ```bash
-pytest -v
+pytest -q tests
 ```
 
-Run focused ML + MQL5 exporter tests:
+Run focused risk-management + exporter tests:
 
 ```bash
-pytest -q tests/test_ml_module.py tests/test_mql5_export_ml.py
+pytest -q tests/test_risk_management.py tests/test_mql5_export.py tests/test_mql5_export_ml.py
 ```
 
 Check focused coverage for ML and MQL5 code generation:
@@ -674,8 +725,13 @@ MIT
 [api-indicator-base]: src/trade_lab/indicators/base.py
 [api-indicator-ma]: src/trade_lab/indicators/moving_averages.py
 [api-indicator-osc]: src/trade_lab/indicators/oscillators.py
+[api-indicator-stat]: src/trade_lab/indicators/statistical.py
 [api-indicator-trend]: src/trade_lab/indicators/trend.py
 [api-indicator-volume]: src/trade_lab/indicators/volume.py
+[api-risk-base]: src/trade_lab/risk_management/base.py
+[api-risk-tp]: src/trade_lab/risk_management/take_profit.py
+[api-risk-sl]: src/trade_lab/risk_management/stop_loss.py
+[api-risk-ts]: src/trade_lab/risk_management/trailing_stop.py
 [api-signal-base]: src/trade_lab/signals/base.py
 [api-signal-signals]: src/trade_lab/signals/signals.py
 [api-signal-temporal]: src/trade_lab/signals/temporal.py

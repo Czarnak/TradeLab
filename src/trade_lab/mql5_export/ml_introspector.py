@@ -7,11 +7,15 @@ any further Python-side logic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
-from trade_lab.mql5_export.introspector import SizingConfig
+from trade_lab.mql5_export.introspector import (
+    RiskConfig,
+    SizingConfig,
+    extract_risk_config,
+)
 from trade_lab.sizing.fixed import FixedPositionSizer
 from trade_lab.sizing.risk_based import RiskBasedPositionSizer
 from trade_lab.strategies.ml_strategy import MLStrategy
@@ -94,6 +98,7 @@ class MLStrategyConfig:
     allow_long: bool
     allow_short: bool
     sizing: SizingConfig
+    risk: RiskConfig = field(default_factory=RiskConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -214,4 +219,5 @@ class MLStrategyIntrospector:
             allow_long=strategy.allow_long,
             allow_short=strategy.allow_short,
             sizing=_extract_sizing(strategy),
+            risk=extract_risk_config(strategy),
         )

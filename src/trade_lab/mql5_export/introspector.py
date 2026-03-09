@@ -7,11 +7,26 @@ Python-side logic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from trade_lab.indicators.base import BaseIndicator
 from trade_lab.signals.base import BaseSignal
 from trade_lab.signals.temporal import CyclicalTemporalSignal
+from trade_lab.risk_management import (
+    BaseStopLoss,
+    BaseTakeProfit,
+    BaseTrailingStop,
+    FixedSL,
+    FixedTP,
+    FixedTS,
+    MovingAverageSL,
+    MovingAverageTS,
+    ParabolicSARSL,
+    ParabolicSARTS,
+    SignalStrengthSL,
+    SignalStrengthTP,
+    SignalStrengthTS,
+)
 from trade_lab.sizing.fixed import FixedPositionSizer
 from trade_lab.sizing.risk_based import RiskBasedPositionSizer
 from trade_lab.strategies.standard import StandardStrategy
@@ -22,6 +37,7 @@ from trade_lab.strategies.standard import StandardStrategy
 
 from trade_lab.indicators.moving_averages import CMA, EMA, SMA, WMA
 from trade_lab.indicators.oscillators import MACD, LarryWilliams, Momentum, RSI
+from trade_lab.indicators.statistical import BaseKernel
 from trade_lab.signals.signals import HeikinAshi, OHLC
 
 _INDICATOR_TYPE_MAP: dict[type, str] = {
@@ -147,6 +163,22 @@ class SizingConfig:
 
 
 @dataclass
+class RiskConfig:
+    has_tp: bool = False
+    tp_type: str = "none"
+    tp_base_points: float | None = None
+
+    has_sl: bool = False
+    sl_type: str = "none"
+    sl_base_points: float | None = None
+
+    has_ts: bool = False
+    ts_type: str = "none"
+    ts_base_points: float | None = None
+    ts_step_points: float | None = None
+
+
+@dataclass
 class StrategyConfig:
     """Full structured configuration of a ``StandardStrategy`` for MQL5 export.
 
@@ -175,6 +207,7 @@ class StrategyConfig:
     exit_threshold: float
     allow_long: bool
     allow_short: bool
+    risk: RiskConfig = field(default_factory=RiskConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -200,10 +233,44 @@ def _extract_signal_config(signal: BaseSignal) -> SignalConfig:
 def _extract_indicator_params(indicator: BaseIndicator) -> dict:
     """Extract relevant constructor params from an indicator by attribute lookup."""
     params: dict = {}
-    for attr in ("column", "period", "fast_period", "slow_period"):
+    for attr in (
+        "column",
+        "period",
+        "fast_period",
+        "slow_period",
+        "bandwidth",
+        "deviations",
+    ):
         if hasattr(indicator, attr):
             params[attr] = getattr(indicator, attr)
+    if hasattr(indicator, "price_source"):
+        params["price_source"] = getattr(indicator, "price_source").value
+    if hasattr(indicator, "kernel_type"):
+        params["kernel"] = getattr(indicator, "kernel_type").value
     return params
+
+
+def _extract_indicator_type(indicator: BaseIndicator) -> str:
+    """Return the stable type identifier used by the exporter."""
+    cls = type(indicator)
+    if cls in _INDICATOR_TYPE_MAP:
+        return _INDICATOR_TYPE_MAP[cls]
+    if isinstance(indicator, BaseKernel):
+        if cls.__name__ == "SquareKernel":
+            return "square_kernel"
+        return f"{indicator.kernel_type.name.lower()}_kernel"
+    return cls.__name__.lower()
+
+
+def _default_display_names(indicator_type: str) -> tuple[str, str]:
+    parts = [part for part in indicator_type.split("_") if part]
+    title = "_".join(
+        part.upper() if len(part) <= 4 else part.capitalize() for part in parts
+    )
+    pascal = "".join(
+        part.upper() if len(part) <= 4 else part.capitalize() for part in parts
+    )
+    return title, pascal
 
 
 def _signals_equal(a: SignalConfig, b: SignalConfig) -> bool:
@@ -273,7 +340,7 @@ def _make_input_prefix(var_name: str, indicator_type: str) -> str:
     'Larry_Williams_Fast'
     """
     base_input, _ = _TYPE_DISPLAY_MAP.get(
-        indicator_type, (indicator_type.capitalize(), "")
+        indicator_type, _default_display_names(indicator_type)
     )
     suffix = var_name[len(indicator_type) :]  # '' or '_fast', '_1', ...
     if suffix:
@@ -296,7 +363,7 @@ def _make_function_name(var_name: str, indicator_type: str) -> str:
     'LarryWilliams'
     """
     _, base_fn = _TYPE_DISPLAY_MAP.get(
-        indicator_type, ("", indicator_type.capitalize())
+        indicator_type, _default_display_names(indicator_type)
     )
     suffix = var_name[len(indicator_type) :]
     if suffix:
@@ -304,6 +371,98 @@ def _make_function_name(var_name: str, indicator_type: str) -> str:
         suffix_str = "".join(p.capitalize() for p in suffix_parts if p)
         return f"{base_fn}{suffix_str}"
     return base_fn
+
+
+def _extract_take_profit_config(take_profit: BaseTakeProfit | None) -> dict:
+    if take_profit is None:
+        return {"has_tp": False, "tp_type": "none", "tp_base_points": None}
+    if isinstance(take_profit, FixedTP):
+        return {
+            "has_tp": True,
+            "tp_type": "fixed",
+            "tp_base_points": take_profit.base_points,
+        }
+    if isinstance(take_profit, SignalStrengthTP):
+        return {
+            "has_tp": True,
+            "tp_type": "signal_strength",
+            "tp_base_points": take_profit.base_points,
+        }
+    return {"has_tp": True, "tp_type": "none", "tp_base_points": None}
+
+
+def _extract_stop_loss_config(stop_loss: BaseStopLoss | None) -> dict:
+    if stop_loss is None:
+        return {"has_sl": False, "sl_type": "none", "sl_base_points": None}
+    if isinstance(stop_loss, FixedSL):
+        return {
+            "has_sl": True,
+            "sl_type": "fixed",
+            "sl_base_points": stop_loss.base_points,
+        }
+    if isinstance(stop_loss, SignalStrengthSL):
+        return {
+            "has_sl": True,
+            "sl_type": "signal_strength",
+            "sl_base_points": stop_loss.base_points,
+        }
+    if isinstance(stop_loss, MovingAverageSL):
+        return {"has_sl": True, "sl_type": "ma", "sl_base_points": None}
+    if isinstance(stop_loss, ParabolicSARSL):
+        return {"has_sl": True, "sl_type": "sar", "sl_base_points": None}
+    return {"has_sl": True, "sl_type": "none", "sl_base_points": None}
+
+
+def _extract_trailing_stop_config(trailing_stop: BaseTrailingStop | None) -> dict:
+    if trailing_stop is None:
+        return {
+            "has_ts": False,
+            "ts_type": "none",
+            "ts_base_points": None,
+            "ts_step_points": None,
+        }
+    if isinstance(trailing_stop, FixedTS):
+        return {
+            "has_ts": True,
+            "ts_type": "fixed",
+            "ts_base_points": trailing_stop.base_points,
+            "ts_step_points": trailing_stop.step_points,
+        }
+    if isinstance(trailing_stop, SignalStrengthTS):
+        return {
+            "has_ts": True,
+            "ts_type": "signal_strength",
+            "ts_base_points": trailing_stop.base_points,
+            "ts_step_points": trailing_stop.step_points,
+        }
+    if isinstance(trailing_stop, MovingAverageTS):
+        return {
+            "has_ts": True,
+            "ts_type": "ma",
+            "ts_base_points": None,
+            "ts_step_points": trailing_stop.step_points,
+        }
+    if isinstance(trailing_stop, ParabolicSARTS):
+        return {
+            "has_ts": True,
+            "ts_type": "sar",
+            "ts_base_points": None,
+            "ts_step_points": trailing_stop.step_points,
+        }
+    return {
+        "has_ts": True,
+        "ts_type": "none",
+        "ts_base_points": None,
+        "ts_step_points": getattr(trailing_stop, "step_points", None),
+    }
+
+
+def extract_risk_config(strategy) -> RiskConfig:
+    return RiskConfig(
+        **_extract_take_profit_config(strategy.take_profit),
+        **_extract_stop_loss_config(strategy.stop_loss),
+        **_extract_trailing_stop_config(strategy.trailing_stop),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -323,8 +482,7 @@ class StrategyIntrospector:
         raw: list[tuple] = []  # (indicator, weight, itype, params)
 
         for indicator, weight in strategy.indicators:
-            cls = type(indicator)
-            itype = _INDICATOR_TYPE_MAP.get(cls, cls.__name__.lower())
+            itype = _extract_indicator_type(indicator)
             params = _extract_indicator_params(indicator)
             indicator_types.append(itype)
             indicator_params_list.append(params)
@@ -392,4 +550,5 @@ class StrategyIntrospector:
             exit_threshold=strategy.exit_threshold,
             allow_long=strategy.allow_long,
             allow_short=strategy.allow_short,
+            risk=extract_risk_config(strategy),
         )

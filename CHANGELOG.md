@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [0.8.0] - 2026-03-09
+
+### Added
+
+- `src/trade_lab/indicators/statistical.py`: full statistical/kernel-regression
+  indicator suite ported from the PineScript `tempMKR` implementation.
+  Added `KernelType`, `BaseKernel`, and concrete indicator classes for
+  `TriangularKernel`, `GaussianKernel`, `EpanechnikovKernel`,
+  `LogisticKernel`, `LogLogisticKernel`, `CosineKernel`, `SincKernel`,
+  `LaplaceKernel`, `QuarticKernel`, `ParabolicKernel`, `ExponentialKernel`,
+  `SilvermanKernel`, `CauchyKernel`, `TentKernel`, `WaveKernel`,
+  `PowerKernel`, `MortersKernel`, and `SquareKernel`.
+- `tests/test_indicators_statistical.py`: new end-to-end coverage for the
+  statistical module, including kernel formula parity, lagged outputs,
+  title-case price-source handling, crossover flags, and export visibility.
+- `mql5_export` standard-strategy support for the statistical indicators:
+  validator coverage, introspection/type mapping, registry descriptors, and
+  generated `.mq5` code paths for kernel regression indicators.
+- New Jinja2 templates for statistical MQL5 export:
+  - `src/trade_lab/mql5_export/templates/helpers/kernel_regression.mq5.j2`
+    for shared kernel-weight / estimate / deviation helpers.
+  - `src/trade_lab/mql5_export/templates/indicators/kernel_regression.mq5.j2`
+    for per-indicator signal-strength rendering.
+- `src/trade_lab/risk_management/`: new risk-management module with abstract
+  bases plus concrete take-profit, stop-loss, and trailing-stop policies:
+  `BaseTakeProfit`, `BaseStopLoss`, `BaseTrailingStop`, `FixedTP`,
+  `SignalStrengthTP`, `FixedSL`, `SignalStrengthSL`, `MovingAverageSL`,
+  `ParabolicSARSL`, `FixedTS`, `SignalStrengthTS`, `MovingAverageTS`,
+  `ParabolicSARTS`.
+- `tests/test_risk_management.py`: new unit and integration coverage for the
+  risk-management classes and their backtesting interactions.
+
+### Changed
+
+- `README.md`: documented the statistical/kernel indicator family and the
+  extended MQL5 export support for kernel-regression strategies.
+- `src/trade_lab/strategies/base.py`: `BaseStrategy` now exposes optional
+  `take_profit`, `stop_loss`, and `trailing_stop` attributes for post-init
+  risk configuration.
+- `src/trade_lab/backtesting/engine.py`: trade simulation now computes TP/SL/TS
+  levels on entry, evaluates them before signal exits on every bar, and records
+  `exit_reason` (`tp`, `sl`, `ts`, `signal`) in the trade log.
+- `src/trade_lab/mql5_export/introspector.py` and
+  `src/trade_lab/mql5_export/ml_introspector.py`: strategy export config now
+  includes `RiskConfig` metadata for standard and ML strategies.
+- `src/trade_lab/mql5_export/validators.py` and
+  `src/trade_lab/mql5_export/ml_validator.py`: export validation now emits
+  warnings for risk objects that require manual MT5 mapping, including
+  `MovingAverageSL`, `MovingAverageTS`, `ParabolicSARSL`, and `ParabolicSARTS`.
+- `src/trade_lab/mql5_export/templates/ea_main.mq5.j2` and
+  `src/trade_lab/mql5_export/templates/ea_ml.mq5.j2`: generated EAs now emit
+  risk-management inputs, pass absolute TP/SL prices into `trade.Buy()` /
+  `trade.Sell()`, and include trailing-stop management logic for fixed and
+  signal-strength trailing stops.
+- `src/trade_lab/__init__.py`: bumped `__version__` to `0.8.0` to match
+  `pyproject.toml`.
+
 ## [0.7.2] - 2026-03-04
 
 ### Fixed
