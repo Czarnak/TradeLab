@@ -8,6 +8,7 @@
       <excludeFolder url="file://$MODULE_DIR$/examples/outputs" />
       <excludeFolder url="file://$MODULE_DIR$/optuna_studies" />
       <excludeFolder url="file://$MODULE_DIR$/outputs" />
+      <excludeFolder url="file://$MODULE_DIR$/PrivateWS" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (TradeLab)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
