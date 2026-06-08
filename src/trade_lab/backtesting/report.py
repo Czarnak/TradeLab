@@ -176,6 +176,7 @@ _METRIC_FORMAT_MAIN = [
     ("avg_loss", "Avg Loss", "${:,.2f}", False),
     ("avg_trade_bars", "Avg Trade Duration", "{:.1f} bars", False),
     ("total_commission", "Total Commission", "${:,.2f}", False),
+    ("total_financing", "Total Financing", "${:,.2f}", False),
 ]
 
 _METRIC_FORMAT_DIRECTIONAL = [

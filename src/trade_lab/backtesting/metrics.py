@@ -108,6 +108,10 @@ def compute_metrics(
         avg_loss = losers["pnl"].mean() if len(losers) > 0 else 0.0
         avg_bars = trade_log["bars_held"].mean()
         total_commission = trade_log["commission"].sum()
+        # financing column only present when the engine ran in CFD mode.
+        total_financing = (
+            trade_log["financing"].sum() if "financing" in trade_log.columns else 0.0
+        )
     else:
         win_rate = 0.0
         # No trades → profit factor is undefined (distinct from a real 0.0).
@@ -116,6 +120,7 @@ def compute_metrics(
         avg_loss = 0.0
         avg_bars = 0.0
         total_commission = 0.0
+        total_financing = 0.0
 
     long_win_rate, long_avg_win, long_avg_loss = _direction_stats(trade_log, "long")
     short_win_rate, short_avg_win, short_avg_loss = _direction_stats(trade_log, "short")
@@ -134,6 +139,7 @@ def compute_metrics(
         "avg_loss": avg_loss,
         "avg_trade_bars": avg_bars,
         "total_commission": total_commission,
+        "total_financing": total_financing,
         "long_win_rate": long_win_rate,
         "short_win_rate": short_win_rate,
         "long_avg_win": long_avg_win,

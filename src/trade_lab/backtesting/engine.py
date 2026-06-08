@@ -49,14 +49,45 @@ class BacktestEngine:
     risk_free_rate : float
         Annual risk-free rate as a plain fraction (e.g. ``0.02`` = 2%),
         used for Sharpe/Sortino. Defaults to ``0.0``.
+    leverage : float
+        Position-size multiplier, enabling CFD-style margin trading. The size
+        produced by the default full-equity sizing or by a ``position_sizer``
+        is multiplied by ``leverage`` (e.g. ``2.0`` doubles the exposure for the
+        same signal). Defaults to ``1.0`` (no leverage). Must be ``>= 1.0``.
+    contract_size : float
+        Dollar value of a 1.0 price-point move on a single contract (a.k.a.
+        point value / multiplier). For equities this is ``1.0`` (price is the
+        dollar value per unit); for index/commodity CFDs it is the contract
+        multiplier. The dollar value of a position is ``pos * price *
+        contract_size``. Defaults to ``1.0``. Must be ``> 0``.
+    maintenance_margin : float
+        Stop-out level as a fraction of the initial margin posted at entry. A
+        leveraged position is force-liquidated when its equity falls to
+        ``maintenance_margin * initial_margin``. Only active when
+        ``leverage > 1.0``. Defaults to ``0.5``. Must be in ``[0, 1)``.
+    financing_rate : float
+        Per-bar financing (swap) rate charged on the full mark-to-market
+        notional of a position held across bars. Deducted from cash each bar a
+        position is carried and reflected in the per-trade ``financing`` column.
+        Defaults to ``0.0`` (no financing).
 
     Notes
     -----
-    Accounting is mark-to-market: equity each bar is ``cash + pos * price``
-    (``cash`` holds the remaining balance, ``pos`` is signed units — positive
-    long, negative short). Entry moves the full notional through ``cash``,
-    exits move the realised proceeds/cost, and the per-trade ``pnl`` is kept
-    for the trade log only.
+    Accounting is mark-to-market: equity each bar is
+    ``cash + pos * price * contract_size`` (``cash`` holds the remaining
+    balance, ``pos`` is signed units — positive long, negative short). Entry
+    moves the full notional through ``cash``, exits move the realised
+    proceeds/cost, and the per-trade ``pnl`` is kept for the trade log only.
+
+    CFD / leverage: ``leverage`` multiplies the opened position size, so a
+    position's notional can exceed available cash — ``cash`` then goes negative
+    (borrowed funds) while equity stays correct. ``contract_size`` scales every
+    dollar conversion for index/commodity CFDs. When ``leverage > 1.0``, a
+    margin-call liquidation level is tracked and force-closes the position if
+    equity breaches ``maintenance_margin``; liquidation is disabled at
+    ``leverage == 1.0`` (a cash account cannot be margin-called). Overnight
+    financing is charged on the full notional of carried positions. All four
+    parameters default to a no-op, reproducing the plain-equity behaviour.
 
     Re-entry is allowed on the **same bar** that a take-profit / stop-loss exit
     fires: after closing, the entry block runs on the same bar, so a position
@@ -73,7 +104,20 @@ class BacktestEngine:
         commission: float = 0.001,
         slippage: float = 0.0005,
         risk_free_rate: float = 0.0,
+        leverage: float = 1.0,
+        contract_size: float = 1.0,
+        maintenance_margin: float = 0.5,
+        financing_rate: float = 0.0,
     ):
+        if leverage < 1.0:
+            raise ValueError("leverage must be >= 1.0")
+        if contract_size <= 0:
+            raise ValueError("contract_size must be > 0")
+        if not 0 <= maintenance_margin < 1:
+            raise ValueError("maintenance_margin must be in [0, 1)")
+        if not np.isfinite(financing_rate):
+            raise ValueError("financing_rate must be finite")
+
         self.strategy = strategy
         self.ticker = ticker
         self.start = start
@@ -82,6 +126,10 @@ class BacktestEngine:
         self.commission = commission
         self.slippage = slippage
         self.risk_free_rate = risk_free_rate
+        self.leverage = leverage
+        self.contract_size = contract_size
+        self.maintenance_margin = maintenance_margin
+        self.financing_rate = financing_rate
 
     def run(self) -> BacktestResult:
         """Execute the full backtest pipeline including data download.
@@ -202,6 +250,13 @@ class BacktestEngine:
         has_sizer = self.strategy.position_sizer is not None
         atr = self._compute_atr(df) if has_sizer else None
 
+        # CFD / leverage parameters (bound locally for the hot loop).
+        cs = self.contract_size
+        lev = self.leverage
+        fin_rate = self.financing_rate
+        maint = self.maintenance_margin
+        use_liq = lev > 1.0  # margin call only applies to a leveraged account
+
         # State
         cash = self.initial_capital
         pos = 0.0  # units held (+ long, − short)
@@ -209,6 +264,8 @@ class BacktestEngine:
         entry_date = None
         entry_bar = 0
         entry_comm = 0.0
+        financing_accrued = 0.0  # swap charged over the current trade's life
+        used_margin = 0.0  # initial margin posted at entry (for liquidation)
         direction = 0
         tp_level: float | None = None
         sl_level: float | None = None
@@ -225,16 +282,31 @@ class BacktestEngine:
         allow_long = self.strategy.allow_long
         allow_short = self.strategy.allow_short
 
-        def _active_stop_reason(
+        def _binding_stop(
             stop_loss_level: float | None,
             trailing_stop_level: float | None,
+            liquidation_level: float | None,
             trade_direction: int,
-        ) -> str:
-            if stop_loss_level is not None and trailing_stop_level is not None:
-                if trade_direction == 1:
-                    return "ts" if trailing_stop_level >= stop_loss_level else "sl"
-                return "ts" if trailing_stop_level <= stop_loss_level else "sl"
-            return "sl" if stop_loss_level is not None else "ts"
+        ) -> tuple[float, str] | None:
+            """First protective stop hit on an adverse move: ``(level, reason)``.
+
+            For a long the binding level is the highest present level (price
+            falls into it first); for a short it is the lowest. Tie-break
+            priority ``ts > sl > liquidation`` (candidate order) preserves the
+            legacy sl/ts behaviour when no liquidation level is present.
+            """
+            candidates: list[tuple[float, str]] = []
+            if trailing_stop_level is not None:
+                candidates.append((trailing_stop_level, "ts"))
+            if stop_loss_level is not None:
+                candidates.append((stop_loss_level, "sl"))
+            if liquidation_level is not None:
+                candidates.append((liquidation_level, "liquidation"))
+            if not candidates:
+                return None
+            if trade_direction == 1:
+                return max(candidates, key=lambda c: c[0])
+            return min(candidates, key=lambda c: c[0])
 
         def _reset_risk_state() -> None:
             nonlocal direction, tp_level, sl_level, ts_level, tp_obj, sl_obj, ts_obj
@@ -250,6 +322,14 @@ class BacktestEngine:
             price = closes[i]
             sig = signals[i]
 
+            # ---- Overnight financing (swap) on a carried position ----
+            # Charged for each night already held (entry bar excluded), on the
+            # full mark-to-market notional, before any exit/equity check.
+            if pos != 0.0 and i > entry_bar and fin_rate:
+                fin = abs(pos) * price * cs * fin_rate
+                cash -= fin
+                financing_accrued += fin
+
             # ---- Close existing position if triggered ----
             if pos > 0:  # long
                 high = highs[i]
@@ -259,22 +339,19 @@ class BacktestEngine:
                     bar = df.iloc[i]
                     ts_level = ts_obj.update(ts_level, direction, sig, bar)
 
-                active_sl = None
-                if sl_level is not None and ts_level is not None:
-                    active_sl = max(sl_level, ts_level)
-                elif sl_level is not None:
-                    active_sl = sl_level
-                elif ts_level is not None:
-                    active_sl = ts_level
+                liq_level = (
+                    (maint * used_margin - cash) / (pos * cs) if use_liq else None
+                )
+                binding = _binding_stop(sl_level, ts_level, liq_level, direction)
 
                 tp_hit = tp_level is not None and high >= tp_level
-                sl_hit = active_sl is not None and low <= active_sl
+                sl_hit = binding is not None and low <= binding[0]
 
                 if tp_hit:
                     exec_price = tp_level
-                    comm = abs(pos) * exec_price * self.commission
-                    proceeds = pos * exec_price - comm
-                    pnl = proceeds - (pos * entry_price + entry_comm)
+                    comm = abs(pos) * exec_price * cs * self.commission
+                    proceeds = pos * exec_price * cs - comm
+                    pnl = proceeds - (pos * entry_price * cs + entry_comm) - financing_accrued
                     cash += proceeds
                     trades.append(
                         {
@@ -286,6 +363,7 @@ class BacktestEngine:
                             "size": pos,
                             "pnl": pnl,
                             "commission": entry_comm + comm,
+                            "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": "tp",
                         }
@@ -294,10 +372,10 @@ class BacktestEngine:
                     _reset_risk_state()
 
                 elif sl_hit:
-                    exec_price = active_sl
-                    comm = abs(pos) * exec_price * self.commission
-                    proceeds = pos * exec_price - comm
-                    pnl = proceeds - (pos * entry_price + entry_comm)
+                    exec_price = binding[0]
+                    comm = abs(pos) * exec_price * cs * self.commission
+                    proceeds = pos * exec_price * cs - comm
+                    pnl = proceeds - (pos * entry_price * cs + entry_comm) - financing_accrued
                     cash += proceeds
                     trades.append(
                         {
@@ -309,12 +387,9 @@ class BacktestEngine:
                             "size": pos,
                             "pnl": pnl,
                             "commission": entry_comm + comm,
+                            "financing": financing_accrued,
                             "bars_held": i - entry_bar,
-                            "exit_reason": _active_stop_reason(
-                                sl_level,
-                                ts_level,
-                                direction,
-                            ),
+                            "exit_reason": binding[1],
                         }
                     )
                     pos = 0.0
@@ -322,9 +397,9 @@ class BacktestEngine:
 
                 elif sig < xt or (allow_short and sig < -et):
                     exec_price = price * (1 - self.slippage)
-                    comm = abs(pos) * exec_price * self.commission
-                    proceeds = pos * exec_price - comm
-                    pnl = proceeds - (pos * entry_price + entry_comm)
+                    comm = abs(pos) * exec_price * cs * self.commission
+                    proceeds = pos * exec_price * cs - comm
+                    pnl = proceeds - (pos * entry_price * cs + entry_comm) - financing_accrued
                     cash += proceeds
                     trades.append(
                         {
@@ -336,6 +411,7 @@ class BacktestEngine:
                             "size": pos,
                             "pnl": pnl,
                             "commission": entry_comm + comm,
+                            "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": "signal",
                         }
@@ -351,22 +427,19 @@ class BacktestEngine:
                     bar = df.iloc[i]
                     ts_level = ts_obj.update(ts_level, direction, sig, bar)
 
-                active_sl = None
-                if sl_level is not None and ts_level is not None:
-                    active_sl = min(sl_level, ts_level)
-                elif sl_level is not None:
-                    active_sl = sl_level
-                elif ts_level is not None:
-                    active_sl = ts_level
+                liq_level = (
+                    (maint * used_margin - cash) / (pos * cs) if use_liq else None
+                )
+                binding = _binding_stop(sl_level, ts_level, liq_level, direction)
 
                 tp_hit = tp_level is not None and low <= tp_level
-                sl_hit = active_sl is not None and high >= active_sl
+                sl_hit = binding is not None and high >= binding[0]
 
                 if tp_hit:
                     exec_price = tp_level
-                    comm = abs(pos) * exec_price * self.commission
-                    cost = abs(pos) * exec_price + comm
-                    pnl = abs(pos) * entry_price - cost - entry_comm
+                    comm = abs(pos) * exec_price * cs * self.commission
+                    cost = abs(pos) * exec_price * cs + comm
+                    pnl = abs(pos) * entry_price * cs - cost - entry_comm - financing_accrued
                     cash -= cost
                     trades.append(
                         {
@@ -378,6 +451,7 @@ class BacktestEngine:
                             "size": abs(pos),
                             "pnl": pnl,
                             "commission": entry_comm + comm,
+                            "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": "tp",
                         }
@@ -386,10 +460,10 @@ class BacktestEngine:
                     _reset_risk_state()
 
                 elif sl_hit:
-                    exec_price = active_sl
-                    comm = abs(pos) * exec_price * self.commission
-                    cost = abs(pos) * exec_price + comm
-                    pnl = abs(pos) * entry_price - cost - entry_comm
+                    exec_price = binding[0]
+                    comm = abs(pos) * exec_price * cs * self.commission
+                    cost = abs(pos) * exec_price * cs + comm
+                    pnl = abs(pos) * entry_price * cs - cost - entry_comm - financing_accrued
                     cash -= cost
                     trades.append(
                         {
@@ -401,12 +475,9 @@ class BacktestEngine:
                             "size": abs(pos),
                             "pnl": pnl,
                             "commission": entry_comm + comm,
+                            "financing": financing_accrued,
                             "bars_held": i - entry_bar,
-                            "exit_reason": _active_stop_reason(
-                                sl_level,
-                                ts_level,
-                                direction,
-                            ),
+                            "exit_reason": binding[1],
                         }
                     )
                     pos = 0.0
@@ -414,9 +485,9 @@ class BacktestEngine:
 
                 elif sig > -xt or (allow_long and sig > et):
                     exec_price = price * (1 + self.slippage)
-                    comm = abs(pos) * exec_price * self.commission
-                    cost = abs(pos) * exec_price + comm
-                    pnl = abs(pos) * entry_price - cost - entry_comm
+                    comm = abs(pos) * exec_price * cs * self.commission
+                    cost = abs(pos) * exec_price * cs + comm
+                    pnl = abs(pos) * entry_price * cs - cost - entry_comm - financing_accrued
                     cash -= cost
                     trades.append(
                         {
@@ -428,6 +499,7 @@ class BacktestEngine:
                             "size": abs(pos),
                             "pnl": pnl,
                             "commission": entry_comm + comm,
+                            "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": "signal",
                         }
@@ -436,7 +508,7 @@ class BacktestEngine:
                     _reset_risk_state()
 
             # Skip new entries on bars with no signal or depleted equity.
-            current_equity = cash + pos * price
+            current_equity = cash + pos * price * cs
             if np.isnan(sig) or current_equity <= 0:
                 equity_arr[i] = max(
                     current_equity,
@@ -455,17 +527,21 @@ class BacktestEngine:
                             exec_price,
                             volatility=atr[i] if atr is not None else None,
                         )
+                        * lev
+                        / cs
                         if has_sizer
-                        else round(cash / exec_price, _SIZE_PRECISION)
+                        else round(cash * lev / (exec_price * cs), _SIZE_PRECISION)
                     )
                     if size > 0:
-                        comm = size * exec_price * self.commission
-                        cash -= size * exec_price + comm
+                        comm = size * exec_price * cs * self.commission
+                        cash -= size * exec_price * cs + comm
                         pos = size
                         entry_price = exec_price
                         entry_date = dates[i]
                         entry_bar = i
                         entry_comm = comm
+                        financing_accrued = 0.0
+                        used_margin = size * exec_price * cs / lev
                         direction = 1
                         tp_obj = self.strategy.take_profit
                         sl_obj = self.strategy.stop_loss
@@ -496,17 +572,21 @@ class BacktestEngine:
                             exec_price,
                             volatility=atr[i] if atr is not None else None,
                         )
+                        * lev
+                        / cs
                         if has_sizer
-                        else round(cash / exec_price, _SIZE_PRECISION)
+                        else round(cash * lev / (exec_price * cs), _SIZE_PRECISION)
                     )
                     if size > 0:
-                        comm = size * exec_price * self.commission
-                        cash += size * exec_price - comm
+                        comm = size * exec_price * cs * self.commission
+                        cash += size * exec_price * cs - comm
                         pos = -size
                         entry_price = exec_price
                         entry_date = dates[i]
                         entry_bar = i
                         entry_comm = comm
+                        financing_accrued = 0.0
+                        used_margin = size * exec_price * cs / lev
                         direction = -1
                         tp_obj = self.strategy.take_profit
                         sl_obj = self.strategy.stop_loss
@@ -528,7 +608,7 @@ class BacktestEngine:
                             else None
                         )
 
-            equity_arr[i] = cash + pos * price
+            equity_arr[i] = cash + pos * price * cs
 
         equity_curve = pd.Series(equity_arr, index=dates, name="equity")
         trade_log = pd.DataFrame(trades)
