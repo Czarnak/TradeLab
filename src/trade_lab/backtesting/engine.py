@@ -2,10 +2,12 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 from trade_lab.strategies.base import BaseStrategy
 from trade_lab.backtesting.metrics import compute_metrics
+
+# Decimal places for default full-equity position sizing.
+_SIZE_PRECISION = 2
 
 
 @dataclass
@@ -44,6 +46,21 @@ class BacktestEngine:
         Proportional commission rate (default 0.1%).
     slippage : float
         Proportional slippage rate (default 0.05%).
+    risk_free_rate : float
+        Annual risk-free rate as a plain fraction (e.g. ``0.02`` = 2%),
+        used for Sharpe/Sortino. Defaults to ``0.0``.
+
+    Notes
+    -----
+    Accounting is mark-to-market: equity each bar is ``cash + pos * price``
+    (``cash`` holds the remaining balance, ``pos`` is signed units — positive
+    long, negative short). Entry moves the full notional through ``cash``,
+    exits move the realised proceeds/cost, and the per-trade ``pnl`` is kept
+    for the trade log only.
+
+    Re-entry is allowed on the **same bar** that a take-profit / stop-loss exit
+    fires: after closing, the entry block runs on the same bar, so a position
+    can reopen immediately if the signal still exceeds the entry threshold.
     """
 
     def __init__(
@@ -53,18 +70,18 @@ class BacktestEngine:
         start: str | None = None,
         end: str | None = None,
         initial_capital: float = 100_000.0,
-        leverage: float = 1.0,
         commission: float = 0.001,
         slippage: float = 0.0005,
+        risk_free_rate: float = 0.0,
     ):
         self.strategy = strategy
         self.ticker = ticker
         self.start = start
         self.end = end
         self.initial_capital = initial_capital
-        self.leverage = leverage
         self.commission = commission
         self.slippage = slippage
+        self.risk_free_rate = risk_free_rate
 
     def run(self) -> BacktestResult:
         """Execute the full backtest pipeline including data download.
@@ -110,7 +127,9 @@ class BacktestEngine:
             )
         df = self.strategy.generate_signals(df.copy())
         equity_curve, trade_log = self._simulate(df)
-        metrics = compute_metrics(equity_curve, trade_log)
+        metrics = compute_metrics(
+            equity_curve, trade_log, risk_free_rate=self.risk_free_rate
+        )
         return BacktestResult(
             df=df,
             equity_curve=equity_curve,
@@ -144,6 +163,8 @@ class BacktestEngine:
     # ------------------------------------------------------------------
 
     def _fetch_data(self) -> pd.DataFrame:
+        import yfinance as yf
+
         df = yf.download(self.ticker, start=self.start, end=self.end)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel("Ticker")
@@ -175,6 +196,8 @@ class BacktestEngine:
         n = len(df)
         signals = df["signal_strength"].to_numpy()
         closes = df["Close"].to_numpy()
+        highs = df["High"].to_numpy()
+        lows = df["Low"].to_numpy()
         dates = df.index
         has_sizer = self.strategy.position_sizer is not None
         atr = self._compute_atr(df) if has_sizer else None
@@ -229,11 +252,11 @@ class BacktestEngine:
 
             # ---- Close existing position if triggered ----
             if pos > 0:  # long
-                bar = df.iloc[i]
-                high = df["High"].iloc[i]
-                low = df["Low"].iloc[i]
+                high = highs[i]
+                low = lows[i]
 
                 if ts_obj and ts_level is not None and not np.isnan(sig):
+                    bar = df.iloc[i]
                     ts_level = ts_obj.update(ts_level, direction, sig, bar)
 
                 active_sl = None
@@ -251,8 +274,8 @@ class BacktestEngine:
                     exec_price = tp_level
                     comm = abs(pos) * exec_price * self.commission
                     proceeds = pos * exec_price - comm
-                    pnl = (proceeds - (pos * entry_price + entry_comm)) / self.leverage
-                    cash += pnl
+                    pnl = proceeds - (pos * entry_price + entry_comm)
+                    cash += proceeds
                     trades.append(
                         {
                             "direction": "long",
@@ -274,8 +297,8 @@ class BacktestEngine:
                     exec_price = active_sl
                     comm = abs(pos) * exec_price * self.commission
                     proceeds = pos * exec_price - comm
-                    pnl = (proceeds - (pos * entry_price + entry_comm)) / self.leverage
-                    cash += pnl
+                    pnl = proceeds - (pos * entry_price + entry_comm)
+                    cash += proceeds
                     trades.append(
                         {
                             "direction": "long",
@@ -301,8 +324,8 @@ class BacktestEngine:
                     exec_price = price * (1 - self.slippage)
                     comm = abs(pos) * exec_price * self.commission
                     proceeds = pos * exec_price - comm
-                    pnl = (proceeds - (pos * entry_price + entry_comm)) / self.leverage
-                    cash += pnl
+                    pnl = proceeds - (pos * entry_price + entry_comm)
+                    cash += proceeds
                     trades.append(
                         {
                             "direction": "long",
@@ -321,11 +344,11 @@ class BacktestEngine:
                     _reset_risk_state()
 
             elif pos < 0:  # short
-                bar = df.iloc[i]
-                high = df["High"].iloc[i]
-                low = df["Low"].iloc[i]
+                high = highs[i]
+                low = lows[i]
 
                 if ts_obj and ts_level is not None and not np.isnan(sig):
+                    bar = df.iloc[i]
                     ts_level = ts_obj.update(ts_level, direction, sig, bar)
 
                 active_sl = None
@@ -343,8 +366,8 @@ class BacktestEngine:
                     exec_price = tp_level
                     comm = abs(pos) * exec_price * self.commission
                     cost = abs(pos) * exec_price + comm
-                    pnl = (abs(pos) * entry_price - cost - entry_comm) / self.leverage
-                    cash += pnl
+                    pnl = abs(pos) * entry_price - cost - entry_comm
+                    cash -= cost
                     trades.append(
                         {
                             "direction": "short",
@@ -366,8 +389,8 @@ class BacktestEngine:
                     exec_price = active_sl
                     comm = abs(pos) * exec_price * self.commission
                     cost = abs(pos) * exec_price + comm
-                    pnl = (abs(pos) * entry_price - cost - entry_comm) / self.leverage
-                    cash += pnl
+                    pnl = abs(pos) * entry_price - cost - entry_comm
+                    cash -= cost
                     trades.append(
                         {
                             "direction": "short",
@@ -393,8 +416,8 @@ class BacktestEngine:
                     exec_price = price * (1 + self.slippage)
                     comm = abs(pos) * exec_price * self.commission
                     cost = abs(pos) * exec_price + comm
-                    pnl = (abs(pos) * entry_price - cost - entry_comm) / self.leverage
-                    cash += pnl
+                    pnl = abs(pos) * entry_price - cost - entry_comm
+                    cash -= cost
                     trades.append(
                         {
                             "direction": "short",
@@ -413,7 +436,7 @@ class BacktestEngine:
                     _reset_risk_state()
 
             # Skip new entries on bars with no signal or depleted equity.
-            current_equity = cash + pos * (price - entry_price) / self.leverage
+            current_equity = cash + pos * price
             if np.isnan(sig) or current_equity <= 0:
                 equity_arr[i] = max(
                     current_equity,
@@ -433,7 +456,7 @@ class BacktestEngine:
                             volatility=atr[i] if atr is not None else None,
                         )
                         if has_sizer
-                        else min(round(cash / exec_price / self.leverage, 2), 2250.0)
+                        else round(cash / exec_price, _SIZE_PRECISION)
                     )
                     if size > 0:
                         comm = size * exec_price * self.commission
@@ -444,10 +467,10 @@ class BacktestEngine:
                         entry_bar = i
                         entry_comm = comm
                         direction = 1
-                        bar = df.iloc[i]
                         tp_obj = self.strategy.take_profit
                         sl_obj = self.strategy.stop_loss
                         ts_obj = self.strategy.trailing_stop
+                        bar = df.iloc[i] if (tp_obj or sl_obj or ts_obj) else None
                         tp_level = (
                             tp_obj.compute(exec_price, direction, sig, bar)
                             if tp_obj
@@ -474,7 +497,7 @@ class BacktestEngine:
                             volatility=atr[i] if atr is not None else None,
                         )
                         if has_sizer
-                        else min(round(cash / exec_price / self.leverage, 2), 2250.0)
+                        else round(cash / exec_price, _SIZE_PRECISION)
                     )
                     if size > 0:
                         comm = size * exec_price * self.commission
@@ -485,10 +508,10 @@ class BacktestEngine:
                         entry_bar = i
                         entry_comm = comm
                         direction = -1
-                        bar = df.iloc[i]
                         tp_obj = self.strategy.take_profit
                         sl_obj = self.strategy.stop_loss
                         ts_obj = self.strategy.trailing_stop
+                        bar = df.iloc[i] if (tp_obj or sl_obj or ts_obj) else None
                         tp_level = (
                             tp_obj.compute(exec_price, direction, sig, bar)
                             if tp_obj
@@ -505,7 +528,7 @@ class BacktestEngine:
                             else None
                         )
 
-            equity_arr[i] = cash + pos * (price - entry_price) / self.leverage
+            equity_arr[i] = cash + pos * price
 
         equity_curve = pd.Series(equity_arr, index=dates, name="equity")
         trade_log = pd.DataFrame(trades)

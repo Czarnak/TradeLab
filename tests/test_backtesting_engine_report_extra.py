@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import trade_lab.backtesting.engine as bt_engine
 from trade_lab.backtesting.engine import BacktestEngine
 from trade_lab.backtesting.report import generate_report
 from trade_lab.strategies.base import BaseStrategy
@@ -67,7 +66,7 @@ def test_engine_fetch_data_drops_multiindex_ticker_level(monkeypatch):
         ),
     )
 
-    monkeypatch.setattr(bt_engine.yf, "download", lambda *args, **kwargs: data)
+    monkeypatch.setattr("yfinance.download", lambda *args, **kwargs: data)
 
     out = engine.fetch_data()
     assert list(out.columns) == ["Open", "High", "Low", "Close", "Volume"]
@@ -198,3 +197,100 @@ def test_backtesting_init_fallback_import_paths(monkeypatch):
     assert module.BacktestEngine is None
     assert module.BacktestResult is None
     assert module.generate_report is None
+
+
+# ---------------------------------------------------------------------------
+# Numeric accounting regression tests (mark-to-market equity — PLAN.md C1/H1).
+# These assert actual equity *values*; the old structure-only tests let the
+# broken accounting slip through.
+# ---------------------------------------------------------------------------
+
+
+def _flat_ohlcv(prices: list[float]) -> pd.DataFrame:
+    idx = pd.date_range("2026-03-01", periods=len(prices), freq="D")
+    return pd.DataFrame(
+        {
+            "Open": prices,
+            "High": prices,
+            "Low": prices,
+            "Close": prices,
+            "Volume": [1] * len(prices),
+        },
+        index=idx,
+    )
+
+
+def test_long_entry_marks_equity_to_market_not_collapsed():
+    # Buy at 10 with full capital; while held, equity equals market value and
+    # does not collapse toward ~0 (the symptom of the old accounting bug).
+    df = _flat_ohlcv([10.0, 10.0, 10.0, 10.0])
+    strategy = _SignalStrategy(
+        [1.0, 0.0, 0.0, -1.0],
+        allow_long=True,
+        allow_short=False,
+        entry_threshold=0.5,
+        exit_threshold=0.0,
+    )
+    result = BacktestEngine(
+        strategy=strategy, initial_capital=10_000.0, commission=0.0, slippage=0.0
+    ).run_on(df)
+
+    # Entry-bar equity ≈ initial capital (was ~0 before the fix).
+    assert result.equity_curve.iloc[0] == pytest.approx(10_000.0, rel=1e-9)
+    # Break-even round trip returns to initial capital.
+    assert result.equity_curve.iloc[-1] == pytest.approx(10_000.0, rel=1e-9)
+    assert result.metrics["total_return"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_long_gain_total_return_matches_price_move_at_full_allocation():
+    # Buy at 10, sell at 11 → +10% on a fully-allocated long.
+    df = _flat_ohlcv([10.0, 10.0, 11.0, 11.0])
+    strategy = _SignalStrategy(
+        [1.0, 0.0, 0.0, -1.0],
+        allow_long=True,
+        allow_short=False,
+        entry_threshold=0.5,
+        exit_threshold=0.0,
+    )
+    result = BacktestEngine(
+        strategy=strategy, initial_capital=10_000.0, commission=0.0, slippage=0.0
+    ).run_on(df)
+
+    assert result.metrics["total_return"] == pytest.approx(0.10, abs=1e-9)
+    assert result.equity_curve.iloc[-1] == pytest.approx(11_000.0, rel=1e-9)
+
+
+def test_short_gain_on_price_drop_is_symmetric():
+    # Short at 10, cover at 9 → +10% on a fully-allocated short.
+    df = _flat_ohlcv([10.0, 10.0, 9.0, 9.0])
+    strategy = _SignalStrategy(
+        [-1.0, 0.0, 0.0, 1.0],
+        allow_long=False,
+        allow_short=True,
+        entry_threshold=0.5,
+        exit_threshold=0.0,
+    )
+    result = BacktestEngine(
+        strategy=strategy, initial_capital=10_000.0, commission=0.0, slippage=0.0
+    ).run_on(df)
+
+    assert result.equity_curve.iloc[0] == pytest.approx(10_000.0, rel=1e-9)
+    assert result.metrics["total_return"] == pytest.approx(0.10, abs=1e-9)
+
+
+def test_default_sizing_deploys_full_equity_without_unit_cap():
+    # Cheap asset ($10) + large capital → 10,000 units, far above the old 2250 cap.
+    df = _flat_ohlcv([10.0, 10.0, 10.0, 10.0])
+    strategy = _SignalStrategy(
+        [1.0, 0.0, 0.0, -1.0],
+        allow_long=True,
+        allow_short=False,
+        entry_threshold=0.5,
+        exit_threshold=0.0,
+    )
+    result = BacktestEngine(
+        strategy=strategy, initial_capital=100_000.0, commission=0.0, slippage=0.0
+    ).run_on(df)
+
+    assert len(result.trade_log) == 1
+    assert result.trade_log.iloc[0]["size"] == pytest.approx(10_000.0)

@@ -93,7 +93,7 @@ For MQL5 export workflows (Jinja2 templates for `.mq5` generation):
 pip install -e ".[mql5]"
 ```
 
-For ONNX-based ML export workflows (TensorFlow/Keras + Jinja2 + tf2onnx + onnx, Python 3.10-3.12):
+For ONNX-based ML export workflows (TensorFlow/Keras + Jinja2 + tf2onnx + onnx, Python 3.11-3.12):
 
 ```bash
 pip install -e ".[onnx]"
@@ -668,7 +668,7 @@ Examples:
 - Extend ML optimisation with richer model families and time-series validation schemes.
 - Improve reporting with richer trade analytics and export formats.
 - Extend ML MQL5 export with automated live feature wiring options.
-- Prepare packaging and release automation for PyPI distribution (maybe).
+- Add release automation (CI build/publish) for PyPI distribution (packaging metadata is already in place).
 
 ## Testing
 
@@ -712,7 +712,7 @@ MIT
 
 [ci-badge]: https://github.com/Czarnak/TradeLab/actions/workflows/ci.yml/badge.svg?branch=main
 [ci-link]: https://github.com/Czarnak/TradeLab/actions/workflows/ci.yml
-[python-badge]: https://img.shields.io/badge/python-3.10%2B-blue.svg
+[python-badge]: https://img.shields.io/badge/python-3.11%2B-blue.svg
 [python-link]: https://www.python.org/downloads/
 [license-badge]: https://img.shields.io/badge/License-MIT-yellow.svg
 [license-link]: LICENSE

@@ -32,7 +32,7 @@ class MLTrainer:
         Generates training labels from the DataFrame.
     model_builder : Callable[[int], keras.Model]
         Factory that creates a fresh, compiled Keras model given ``input_dim``.
-        Use ``dense_model()`` or ``lstm_model()`` from ``trade_lab.ml.models``.
+        Use ``dense_model()`` from ``trade_lab.ml.models``.
     scaler : FeatureScaler | None
         If provided, features are scaled.  Fitted on training data only
         to prevent leakage.

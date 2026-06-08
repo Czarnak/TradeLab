@@ -113,27 +113,34 @@ class MonteCarloRunner:
         MonteCarloResult
             Container holding raw metric distributions across all simulations.
         """
-        metric_series: dict[str, list[float]] = {}
-        seen_keys: set[str] = set()
-
         indices = range(self.n_simulations)
         iterator = self._make_iterator(indices)
 
-        for i in iterator:
-            sim_result = self._run_single_simulation(df, i, seen_keys)
+        # Collect one result per simulation (None marks a failed run) so every
+        # metric series ends up exactly n_simulations long, regardless of which
+        # simulations fail — including the first.
+        results: list[dict | None] = [
+            self._run_single_simulation(df, i) for i in iterator
+        ]
 
-            # Filter to requested metrics if specified
-            selected = (
-                {k: v for k, v in sim_result.items() if k in self.metrics}
-                if self.metrics is not None
-                else sim_result
+        # Canonical metric key set, decided once: the requested subset if given,
+        # otherwise the union of keys across all successful simulations.
+        if self.metrics is not None:
+            keys = list(self.metrics)
+        else:
+            keys = sorted(
+                {key for result in results if result is not None for key in result}
             )
 
-            for key, value in selected.items():
-                seen_keys.add(key)
-                metric_series.setdefault(key, []).append(
-                    float(value) if value is not None else float("nan")
-                )
+        metric_series: dict[str, list[float]] = {
+            key: [
+                float(result[key])
+                if result is not None and result.get(key) is not None
+                else float("nan")
+                for result in results
+            ]
+            for key in keys
+        }
 
         return MonteCarloResult(
             n_simulations=self.n_simulations,
@@ -178,9 +185,8 @@ class MonteCarloRunner:
         self,
         df: pd.DataFrame,
         simulation_index: int,
-        seen_keys: set[str],
-    ) -> dict:
-        """Run one simulation and return its metrics dict.
+    ) -> dict | None:
+        """Run one simulation and return its metrics dict (or None on failure).
 
         Seeds the generator deterministically: base_seed + simulation_index.
         This guarantees that:
@@ -198,8 +204,10 @@ class MonteCarloRunner:
 
         Returns
         -------
-        dict
-            Metric name → float value from this simulation's backtest.
+        dict | None
+            Metric name → float value from this simulation's backtest, or
+            ``None`` if the simulation raised — the caller fills NaN for every
+            expected metric in that slot.
         """
         base_seed = self.generator.seed
         sim_seed = None if base_seed is None else base_seed + simulation_index
@@ -217,7 +225,7 @@ class MonteCarloRunner:
                 f"({type(exc).__name__}: {exc}) — recording NaN for all metrics.",
                 file=sys.stderr,
             )
-            return {key: float("nan") for key in seen_keys}
+            return None
 
 
 # ---------------------------------------------------------------------------

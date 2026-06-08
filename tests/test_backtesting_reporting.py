@@ -74,11 +74,29 @@ def test_compute_metrics_handles_empty_trade_log():
 
     assert metrics["total_trades"] == 0
     assert metrics["win_rate"] == 0.0
-    assert metrics["profit_factor"] == 0.0
+    # No trades → profit factor is undefined (nan), distinct from a real 0.0.
+    assert pd.isna(metrics["profit_factor"])
     assert metrics["avg_trade_bars"] == 0.0
     assert metrics["total_commission"] == 0.0
     assert metrics["long_win_rate"] == 0.0
     assert metrics["short_win_rate"] == 0.0
+
+
+def test_sharpe_uses_zero_risk_free_rate_by_default():
+    equity_curve = pd.Series(
+        [100.0, 101.0, 102.0, 103.0, 104.0],
+        index=pd.date_range("2026-01-01", periods=5, freq="D"),
+    )
+    trade_log = pd.DataFrame(columns=["direction", "pnl", "bars_held", "commission"])
+
+    # Default risk-free rate is now 0.0 → a steadily rising curve has a positive
+    # Sharpe (the old default of 10.0 = 1000% forced it deeply negative).
+    metrics = compute_metrics(equity_curve, trade_log)
+    assert metrics["sharpe_ratio"] > 0
+
+    # A large annual risk-free fraction still drives Sharpe negative.
+    high_rf = compute_metrics(equity_curve, trade_log, risk_free_rate=10.0)
+    assert high_rf["sharpe_ratio"] < 0
 
 
 def test_compute_metrics_ignores_infinite_returns_without_runtime_warnings():

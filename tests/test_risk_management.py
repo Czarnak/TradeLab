@@ -165,7 +165,10 @@ def test_backtest_engine_marks_trailing_stop_as_more_protective_exit():
         slippage=0.0,
     ).run_on(df)
 
-    assert len(result.trade_log) == 1
+    # Correct mark-to-market equity no longer suppresses same-bar re-entry:
+    # after the ts exit on bar 1 the still-strong signal (0.9) reopens a long
+    # that is also stopped out (documented same-bar re-entry behaviour).
+    assert len(result.trade_log) == 2
     trade = result.trade_log.iloc[0]
     assert trade["exit_reason"] == "ts"
     assert trade["exit_price"] == pytest.approx(100.0)

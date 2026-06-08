@@ -39,10 +39,6 @@ class BaseMA(BaseIndicator):
         self.period = period
         self.plot_title = f"MA({self.period})"
 
-    def _compute(self, df: pd.DataFrame) -> pd.DataFrame:
-        # Implemented by concrete subclasses.
-        ...
-
     def to_signal_strength(self, df: pd.DataFrame) -> pd.Series:
         ma = df[self.output_columns[0]]
         price = df[self.column]
@@ -75,10 +71,6 @@ class BaseMA(BaseIndicator):
             yaxis_title="Price",
         )
         fig.show()
-
-    @property
-    def _raw_output_columns(self) -> list[str]:
-        return [f"indicator__ma_{self.period}"]
 
 
 class SMA(BaseMA):

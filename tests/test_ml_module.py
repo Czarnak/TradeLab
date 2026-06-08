@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from trade_lab.indicators.base import BaseIndicator
-from trade_lab.ml.models import KerasModelWrapper, dense_model, lstm_model
+from trade_lab.ml.models import KerasModelWrapper, dense_model
 from trade_lab.ml.preprocessing import FeatureScaler, prepare_features
 from trade_lab.ml.targets import BaseTarget, DirectionalTarget, FutureReturn
 from trade_lab.ml.trainer import MLTrainer
@@ -250,23 +250,6 @@ def test_dense_model_builder_uses_expected_keras_calls(monkeypatch):
     assert [d["activation"] for d in calls["dense_inits"]] == ["relu", "relu", "tanh"]
     assert calls["dropout_rates"] == [0.1, 0.1]
     assert calls["adam_lrs"] == [0.005]
-    assert callable(calls["compile"][0]["loss"])
-    assert calls["compile"][0]["loss"].__name__ == "directional_loss"
-    assert model.compiled is not None
-
-
-def test_lstm_model_builder_uses_expected_keras_calls(monkeypatch):
-    calls = _install_fake_keras_for_builders(monkeypatch)
-
-    builder = lstm_model(units=8, dropout=0.25, learning_rate=0.01)
-    model = builder(input_dim=5, sequence_length=7)
-
-    assert calls["input_shapes"] == [(7, 5)]
-    assert calls["lstm_units"] == [8]
-    assert calls["dropout_rates"] == [0.25]
-    assert [d["units"] for d in calls["dense_inits"]] == [1]
-    assert [d["activation"] for d in calls["dense_inits"]] == ["tanh"]
-    assert calls["adam_lrs"] == [0.01]
     assert callable(calls["compile"][0]["loss"])
     assert calls["compile"][0]["loss"].__name__ == "directional_loss"
     assert model.compiled is not None

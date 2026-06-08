@@ -10,7 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [
-    { name = "Łukasz Rafał Czarnacki", email = "czarnacki.lukasz.rafal@com" }
+    { name = "Łukasz Rafał Czarnacki", email = "czarnacki.lukasz.rafal@gmail.com" },
 ]
 keywords = ["trading", "backtesting", "finance", "algorithmic-trading"]
 classifiers = [
@@ -28,9 +28,7 @@ dependencies = [
     "pandas>=3.0.1",
     "numpy>=2.4.2",
     "yfinance>=1.2.0",
-    "matplotlib>=3.7",
-    "scipy>=1.17.1",
-    "nbformat>=4.2.0",
+    "plotly>=5.0",
     "optuna>=3.5",
 ]
 
@@ -41,19 +39,10 @@ ml = [
     "optuna-integration[keras]>=4.5",
     "scikit-learn>=1.8",
 ]
-mql5 = [
-    "Jinja2>=3.1"
-]
-onnx = [
-    "Jinja2>=3.1",
-    "tf2onnx>=1.16",
-    "onnx>=1.15",
-]
-dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "tqdm>=4.65",
-]
+mql5 = ["Jinja2>=3.1"]
+onnx = ["Jinja2>=3.1", "tf2onnx>=1.16", "onnx>=1.15"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "tqdm>=4.65", "ruff>=0.15.16"]
+examples = ["nbformat>=4.2.0"]
 
 [project.urls]
 Homepage = "https://github.com/Czarnak/TradeLab"
@@ -61,4 +50,4 @@ Repository = "https://github.com/Czarnak/TradeLab"
 Issues = "https://github.com/Czarnak/TradeLab/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["trade_lab"]
+packages = ["src/trade_lab"]

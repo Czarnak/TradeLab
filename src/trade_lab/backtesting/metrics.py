@@ -24,7 +24,7 @@ def _direction_stats(
 def compute_metrics(
     equity_curve: pd.Series,
     trade_log: pd.DataFrame,
-    risk_free_rate: float = 10.0,
+    risk_free_rate: float = 0.0,
 ) -> dict:
     """Compute performance metrics from backtest results.
 
@@ -35,7 +35,15 @@ def compute_metrics(
     trade_log : pd.DataFrame
         Trade log with columns: pnl, bars_held, etc.
     risk_free_rate : float
-        Annualised risk-free rate for Sharpe/Sortino calculation.
+        Annual risk-free rate as a plain fraction (e.g. ``0.02`` = 2%),
+        matching the units of ``annualized_return``. Used for Sharpe/Sortino.
+        Defaults to ``0.0``.
+
+    Notes
+    -----
+    ``profit_factor`` uses two distinct sentinels: ``inf`` when there are
+    winning trades but zero gross loss (unbounded), and ``nan`` when there
+    are no trades at all (undefined).
 
     Returns
     -------
@@ -94,6 +102,7 @@ def compute_metrics(
         win_rate = len(winners) / n_trades
         gross_profit = winners["pnl"].sum() if len(winners) > 0 else 0.0
         gross_loss = abs(losers["pnl"].sum()) if len(losers) > 0 else 0.0
+        # inf = winning trades with zero gross loss (unbounded gain).
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
         avg_win = winners["pnl"].mean() if len(winners) > 0 else 0.0
         avg_loss = losers["pnl"].mean() if len(losers) > 0 else 0.0
@@ -101,7 +110,8 @@ def compute_metrics(
         total_commission = trade_log["commission"].sum()
     else:
         win_rate = 0.0
-        profit_factor = 0.0
+        # No trades → profit factor is undefined (distinct from a real 0.0).
+        profit_factor = float("nan")
         avg_win = 0.0
         avg_loss = 0.0
         avg_bars = 0.0

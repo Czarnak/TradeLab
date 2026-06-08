@@ -220,7 +220,7 @@ class MLObjective:
         # Step 3 — Build feature matrices
         feature_matrix = FeatureMatrix(indicators)
         X_train, y_train = feature_matrix.build(self.train_df, fit_scaler=True)
-        X_val, _ = feature_matrix.build(self.val_df, fit_scaler=False)
+        X_val, y_val_arr = feature_matrix.build(self.val_df, fit_scaler=False)
 
         if X_train.shape[0] == 0:
             raise optuna.TrialPruned("No training samples after NaN dropping.")
@@ -229,8 +229,6 @@ class MLObjective:
         n_features = X_train.shape[1]
         model = self.model_factory(n_features)
 
-        # Re-build val arrays for callback (already computed above)
-        _, y_val_arr = feature_matrix.build(self.val_df, fit_scaler=False)
         callbacks = [KerasPruningCallback(trial, monitor="val_loss")]
         model.fit(
             X_train,

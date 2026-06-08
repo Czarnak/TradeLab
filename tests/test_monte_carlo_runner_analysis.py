@@ -95,6 +95,41 @@ def test_runner_run_filters_metrics_when_subset_is_configured():
     assert result.metric_series["score"] == [1.0, 2.0]
 
 
+class _FailFirstEngine:
+    """Engine that raises on the first run_on call, then succeeds."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def run_on(self, synthetic_df):
+        self.calls += 1
+        if self.calls == 1:
+            raise ValueError("boom on first simulation")
+        return SimpleNamespace(
+            metrics={"score": float(self.calls), "other": float(self.calls)}
+        )
+
+
+def test_runner_keeps_series_length_when_first_simulation_fails(capsys):
+    # Regression for PLAN.md H4: a failure on simulation 0 must still leave every
+    # metric series exactly n_simulations long (NaN-filled), not shorter.
+    df = _sample_ohlcv()
+    runner = MonteCarloRunner(
+        engine=_FailFirstEngine(),
+        generator=_TrackingGenerator(seed=7),
+        n_simulations=3,
+        verbose=False,
+    )
+
+    result = runner.run(df)
+
+    assert set(result.metric_series) == {"score", "other"}
+    for series in result.metric_series.values():
+        assert len(series) == 3
+    assert np.isnan(result.metric_series["score"][0])
+    assert result.metric_series["score"][1:] == [2.0, 3.0]
+
+
 def test_runner_make_iterator_returns_range_when_verbose_disabled():
     runner = MonteCarloRunner(
         _DummyEngine(), _TrackingGenerator(seed=1), n_simulations=2, verbose=False
@@ -157,7 +192,7 @@ def test_run_single_simulation_handles_none_seed_and_returns_metrics_dict():
         engine=engine, generator=generator, n_simulations=1, verbose=False
     )
 
-    metrics = runner._run_single_simulation(df, simulation_index=9, seen_keys=set())
+    metrics = runner._run_single_simulation(df, simulation_index=9)
 
     assert metrics["score"] == 1
     assert generator.seen_seeds == [None]

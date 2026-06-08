@@ -620,8 +620,8 @@ class Stochastic(BaseIndicator):
     @property
     def _raw_output_columns(self) -> list[str]:
         return [
-            f"indicator__stoch_k_{self.k_period}",
-            f"indicator__stoch_d_{self.k_period}",
+            f"indicator__stoch_k_{self.k_period}_{self.d_period}_{self.slowing}",
+            f"indicator__stoch_d_{self.k_period}_{self.d_period}_{self.slowing}",
         ]
 
 
@@ -784,14 +784,14 @@ class DPO(BaseIndicator):
     """Detrended Price Oscillator.
 
     Removes the dominant trend from price by comparing the current price to a
-    past moving average, isolating shorter-term price cycles:
+    shorter moving average, isolating shorter-term price cycles:
 
         half = period // 2 + 1
         DPO = price - SMA(price, half)
 
-    Using a shorter SMA placed at the centre of the window effectively shifts
-    the MA back in time, removing any trend component with a cycle longer than
-    ``period`` bars.
+    Note: this is the non-displaced variant. The classic DPO additionally
+    shifts the SMA back by ``period // 2 + 1`` bars; this implementation uses
+    the shorter SMA window directly without that backward displacement.
 
     Signal strength: tanh(DPO / rolling_std(price, period))
     Normalised by the price rolling standard deviation to make the signal

@@ -98,8 +98,8 @@ def test_tema_compute_matches_formula():
         (
             Stochastic(k_period=14, d_period=3, slowing=3),
             [
-                "indicator__stoch_k_14",
-                "indicator__stoch_d_14",
+                "indicator__stoch_k_14_3_3",
+                "indicator__stoch_d_14_3_3",
             ],
         ),
         (ROC(period=12), ["indicator__roc_12"]),
@@ -133,6 +133,16 @@ def test_new_indicator_compute_and_signal_strength(indicator, expected_columns):
     assert len(strength) == len(df)
     assert strength.notna().sum() > 0
     assert np.isfinite(strength.dropna().to_numpy()).all()
+
+
+def test_stochastic_columns_distinguish_d_period_and_slowing():
+    # PLAN.md M4: two Stochastics sharing k_period but differing in d_period
+    # must not collide on column names (they used to overwrite each other).
+    a = Stochastic(k_period=14, d_period=3, slowing=3)
+    b = Stochastic(k_period=14, d_period=5, slowing=3)
+
+    assert a.output_columns != b.output_columns
+    assert set(a.output_columns).isdisjoint(b.output_columns)
 
 
 def test_atr_compute_and_signal_strength_not_implemented():
