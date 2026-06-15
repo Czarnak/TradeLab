@@ -52,6 +52,11 @@ class WalkForwardSplit:
         Fraction of data used for training in the first fold.
     expanding : bool
         If True, training window grows.  If False, it slides.
+    embargo : int
+        Number of rows dropped from the **end** of every fold's training window
+        before its test window. With a forward-looking target spanning ``H`` bars,
+        set ``embargo=H`` so the last training labels cannot overlap (leak into)
+        the test period. Defaults to ``0`` (no purge).
     """
 
     def __init__(
@@ -59,14 +64,18 @@ class WalkForwardSplit:
         n_splits: int = 5,
         initial_train_ratio: float = 0.6,
         expanding: bool = True,
+        embargo: int = 0,
     ):
         if n_splits < 1:
             raise ValueError("n_splits must be >= 1")
         if not 0 < initial_train_ratio < 1:
             raise ValueError("initial_train_ratio must be in (0, 1)")
+        if embargo < 0:
+            raise ValueError("embargo must be >= 0")
         self.n_splits = n_splits
         self.initial_train_ratio = initial_train_ratio
         self.expanding = expanding
+        self.embargo = embargo
 
     def split(self, n_samples: int) -> list[WalkForwardFold]:
         """Generate train/test index arrays for each fold."""
@@ -90,11 +99,60 @@ class WalkForwardSplit:
             else:
                 fold_train_start = max(0, test_start - train_size)
 
+            train_idx = np.arange(fold_train_start, test_start)
+            if self.embargo > 0:
+                train_idx = train_idx[: -self.embargo]
+
             folds.append(
                 WalkForwardFold(
-                    train_idx=np.arange(fold_train_start, test_start),
+                    train_idx=train_idx,
                     test_idx=np.arange(test_start, test_end),
                 )
             )
 
         return folds
+
+
+def purged_chronological_split(
+    n_samples: int,
+    val_fraction: float,
+    embargo: int = 0,
+    min_val: int = 0,
+) -> tuple[slice, slice]:
+    """Chronological train/validation split with a purge gap, for early stopping.
+
+    The last ``val_fraction`` of the data (floored at ``min_val`` rows) becomes the
+    validation tail; the ``embargo`` rows immediately preceding it are dropped from
+    training so a forward-looking target cannot leak its label across the boundary.
+
+    Parameters
+    ----------
+    n_samples : int
+        Total number of (already chronologically ordered) rows.
+    val_fraction : float
+        Fraction of rows reserved for validation, in ``(0, 1)``.
+    embargo : int
+        Rows purged between the training and validation slices. Defaults to ``0``.
+    min_val : int
+        Minimum validation rows; overrides ``val_fraction`` when larger.
+
+    Returns
+    -------
+    tuple[slice, slice]
+        ``(train_slice, val_slice)`` to index the row axis of ``X``/``y``.
+    """
+    if not 0 < val_fraction < 1:
+        raise ValueError("val_fraction must be in (0, 1)")
+    if embargo < 0:
+        raise ValueError("embargo must be >= 0")
+
+    n_val = min(max(int(n_samples * val_fraction), min_val), n_samples)
+    val_start = n_samples - n_val
+    train_end = val_start - embargo
+    if train_end <= 0:
+        raise ValueError(
+            "embargo/val_fraction leaves no training rows "
+            f"(n_samples={n_samples}, n_val={n_val}, embargo={embargo})"
+        )
+
+    return slice(0, train_end), slice(val_start, n_samples)

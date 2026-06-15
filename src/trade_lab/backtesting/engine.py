@@ -70,6 +70,14 @@ class BacktestEngine:
         notional of a position held across bars. Deducted from cash each bar a
         position is carried and reflected in the per-trade ``financing`` column.
         Defaults to ``0.0`` (no financing).
+    execute_on : str
+        Execution timing for **signal-driven** entries, exits and flips:
+        ``"close"`` (default) fills at the signal bar's close — the legacy,
+        backward-compatible path; ``"next_open"`` makes the decision on the prior
+        bar's signal and fills at the current bar's open (decide at ``Close[t-1]``,
+        fill at ``Open[t]``), removing the same-bar-close lookahead. Protective
+        stops (TP/SL/trailing/liquidation) remain level-based intrabar checks and
+        equity is always marked-to-market at the close, regardless of this setting.
 
     Notes
     -----
@@ -108,6 +116,7 @@ class BacktestEngine:
         contract_size: float = 1.0,
         maintenance_margin: float = 0.5,
         financing_rate: float = 0.0,
+        execute_on: str = "close",
     ):
         if leverage < 1.0:
             raise ValueError("leverage must be >= 1.0")
@@ -117,8 +126,11 @@ class BacktestEngine:
             raise ValueError("maintenance_margin must be in [0, 1)")
         if not np.isfinite(financing_rate):
             raise ValueError("financing_rate must be finite")
+        if execute_on not in ("close", "next_open"):
+            raise ValueError("execute_on must be 'close' or 'next_open'")
 
         self.strategy = strategy
+        self.execute_on = execute_on
         self.ticker = ticker
         self.start = start
         self.end = end
@@ -250,6 +262,12 @@ class BacktestEngine:
         has_sizer = self.strategy.position_sizer is not None
         atr = self._compute_atr(df) if has_sizer else None
 
+        # Execution timing. In "next_open" mode the decision at bar i uses the
+        # prior bar's signal and signal-driven fills happen at this bar's open
+        # (decide at close[i-1], fill at open[i]) — no same-bar-close lookahead.
+        next_open = self.execute_on == "next_open"
+        opens = df["Open"].to_numpy() if next_open else None
+
         # CFD / leverage parameters (bound locally for the hot loop).
         cs = self.contract_size
         lev = self.leverage
@@ -319,8 +337,14 @@ class BacktestEngine:
             ts_obj = None
 
         for i in range(n):
-            price = closes[i]
-            sig = signals[i]
+            price = closes[i]  # mark-to-market / financing / intrabar reference
+            if next_open:
+                # Act on the prior bar's signal, fill at this bar's open.
+                sig = signals[i - 1] if i > 0 else np.nan
+                fill = opens[i]
+            else:
+                sig = signals[i]
+                fill = price
 
             # ---- Overnight financing (swap) on a carried position ----
             # Charged for each night already held (entry bar excluded), on the
@@ -351,7 +375,11 @@ class BacktestEngine:
                     exec_price = tp_level
                     comm = abs(pos) * exec_price * cs * self.commission
                     proceeds = pos * exec_price * cs - comm
-                    pnl = proceeds - (pos * entry_price * cs + entry_comm) - financing_accrued
+                    pnl = (
+                        proceeds
+                        - (pos * entry_price * cs + entry_comm)
+                        - financing_accrued
+                    )
                     cash += proceeds
                     trades.append(
                         {
@@ -375,7 +403,11 @@ class BacktestEngine:
                     exec_price = binding[0]
                     comm = abs(pos) * exec_price * cs * self.commission
                     proceeds = pos * exec_price * cs - comm
-                    pnl = proceeds - (pos * entry_price * cs + entry_comm) - financing_accrued
+                    pnl = (
+                        proceeds
+                        - (pos * entry_price * cs + entry_comm)
+                        - financing_accrued
+                    )
                     cash += proceeds
                     trades.append(
                         {
@@ -396,10 +428,14 @@ class BacktestEngine:
                     _reset_risk_state()
 
                 elif sig < xt or (allow_short and sig < -et):
-                    exec_price = price * (1 - self.slippage)
+                    exec_price = fill * (1 - self.slippage)
                     comm = abs(pos) * exec_price * cs * self.commission
                     proceeds = pos * exec_price * cs - comm
-                    pnl = proceeds - (pos * entry_price * cs + entry_comm) - financing_accrued
+                    pnl = (
+                        proceeds
+                        - (pos * entry_price * cs + entry_comm)
+                        - financing_accrued
+                    )
                     cash += proceeds
                     trades.append(
                         {
@@ -439,7 +475,12 @@ class BacktestEngine:
                     exec_price = tp_level
                     comm = abs(pos) * exec_price * cs * self.commission
                     cost = abs(pos) * exec_price * cs + comm
-                    pnl = abs(pos) * entry_price * cs - cost - entry_comm - financing_accrued
+                    pnl = (
+                        abs(pos) * entry_price * cs
+                        - cost
+                        - entry_comm
+                        - financing_accrued
+                    )
                     cash -= cost
                     trades.append(
                         {
@@ -463,7 +504,12 @@ class BacktestEngine:
                     exec_price = binding[0]
                     comm = abs(pos) * exec_price * cs * self.commission
                     cost = abs(pos) * exec_price * cs + comm
-                    pnl = abs(pos) * entry_price * cs - cost - entry_comm - financing_accrued
+                    pnl = (
+                        abs(pos) * entry_price * cs
+                        - cost
+                        - entry_comm
+                        - financing_accrued
+                    )
                     cash -= cost
                     trades.append(
                         {
@@ -484,10 +530,15 @@ class BacktestEngine:
                     _reset_risk_state()
 
                 elif sig > -xt or (allow_long and sig > et):
-                    exec_price = price * (1 + self.slippage)
+                    exec_price = fill * (1 + self.slippage)
                     comm = abs(pos) * exec_price * cs * self.commission
                     cost = abs(pos) * exec_price * cs + comm
-                    pnl = abs(pos) * entry_price * cs - cost - entry_comm - financing_accrued
+                    pnl = (
+                        abs(pos) * entry_price * cs
+                        - cost
+                        - entry_comm
+                        - financing_accrued
+                    )
                     cash -= cost
                     trades.append(
                         {
@@ -519,7 +570,7 @@ class BacktestEngine:
             # ---- Open new position if flat ----
             if pos == 0.0:
                 if allow_long and sig > et:
-                    exec_price = price * (1 + self.slippage)
+                    exec_price = fill * (1 + self.slippage)
                     size = (
                         self.strategy.position_sizer.compute_size(
                             sig,
@@ -564,7 +615,7 @@ class BacktestEngine:
                         )
 
                 elif allow_short and sig < -et:
-                    exec_price = price * (1 - self.slippage)
+                    exec_price = fill * (1 - self.slippage)
                     size = (
                         self.strategy.position_sizer.compute_size(
                             sig,

@@ -609,9 +609,7 @@ def _patch_onnx_export_pipeline(monkeypatch, tmp_path, config):
     )
 
 
-def test_export_ml_to_mql5_onnx_renders_risk_based_sizing_inputs(
-    monkeypatch, tmp_path
-):
+def test_export_ml_to_mql5_onnx_renders_risk_based_sizing_inputs(monkeypatch, tmp_path):
     # Regression: the ONNX EA template referenced sizing.fraction /
     # sizing.conviction_scale, which do not exist on SizingConfig
     # (params dict holds max_fraction / risk_multiplier).
@@ -630,7 +628,10 @@ def test_export_ml_to_mql5_onnx_renders_risk_based_sizing_inputs(
     assert "input double MaxFraction    = 0.0500;" in result.code
     assert "input double RiskMultiplier = 2.0000;" in result.code
     # sizing body mirrors RiskBasedPositionSizer.compute_size()
-    assert "(balance * MaxFraction * conviction) / (atr_value * RiskMultiplier)" in result.code
+    assert (
+        "(balance * MaxFraction * conviction) / (atr_value * RiskMultiplier)"
+        in result.code
+    )
     # trade_logic helper contract: lowercase `trade` object and `lots` variable
     assert "CTrade  trade;" in result.code
     assert "Trade.SetExpertMagicNumber" not in result.code

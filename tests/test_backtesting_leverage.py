@@ -8,7 +8,6 @@ Covers the four CFD parameters added to ``BacktestEngine``: ``leverage``
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -131,7 +130,9 @@ def test_leverage_flat_round_trip_returns_to_initial_capital():
 def test_leverage_multiplies_position_sizer_output():
     # FixedPositionSizer(0.5) → 500 units at 1x; leverage=2 lifts it to 1000.
     df = _flat_ohlcv([10.0, 10.0, 11.0, 11.0])
-    strategy = _long_then_flat([1.0, 0.0, 0.0, -1.0], position_sizer=FixedPositionSizer(0.5))
+    strategy = _long_then_flat(
+        [1.0, 0.0, 0.0, -1.0], position_sizer=FixedPositionSizer(0.5)
+    )
     result = BacktestEngine(
         strategy=strategy,
         initial_capital=10_000.0,
