@@ -31,3 +31,5 @@ node_modules/
 dist/
 *.generated.py
 .tmp/
+PrivateWS/
+data/

@@ -32,16 +32,16 @@ input double Feature_{{ loop.index0 }}_{{ name | replace("__", "_") | replace(".
 {% if sizing.sizer_type == "none" %}
 input double LotSize = 0.1;
 {% elif sizing.sizer_type == "fixed" %}
-input double RiskFraction = {{ "%.4f"|format(sizing.fraction) }};
+input double SizingFraction = {{ "%.4f"|format(sizing.params.fraction) }};  // Fraction of balance per trade
 {% elif sizing.sizer_type == "risk_based" %}
-input double RiskFraction    = {{ "%.4f"|format(sizing.fraction) }};
-input double ConvictionScale = {{ "%.4f"|format(sizing.conviction_scale) }};
+input double MaxFraction    = {{ "%.4f"|format(sizing.params.max_fraction) }};    // Max fraction of balance at full conviction
+input double RiskMultiplier = {{ "%.4f"|format(sizing.params.risk_multiplier) }}; // ATR multiples of risk per unit
 {% endif %}
 
 //+------------------------------------------------------------------+
 //| Global variables                                                 |
 //+------------------------------------------------------------------+
-CTrade  Trade;
+CTrade  trade;
 long    OnnxModel  = INVALID_HANDLE;
 {% if sizing.sizer_type == "risk_based" %}
 int     AtrHandle  = INVALID_HANDLE;
@@ -121,8 +121,8 @@ double ComputeOnnxSignal()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-    Trade.SetExpertMagicNumber(MagicNumber);
-    Trade.SetDeviationInPoints(10);
+    trade.SetExpertMagicNumber(MagicNumber);
+    trade.SetDeviationInPoints(10);
 
     // Load ONNX model from MQL5\Files\
     OnnxModel = OnnxCreate(ONNX_FILENAME, ONNX_DEFAULT);
@@ -198,25 +198,25 @@ void OnTick()
 
     // --- Position sizing ---
 {% if sizing.sizer_type == "none" %}
-    double lot = NormalizeLots(LotSize);
+    double lots = NormalizeLots(LotSize);
 {% elif sizing.sizer_type == "fixed" %}
     double balance  = AccountInfoDouble(ACCOUNT_BALANCE);
     double price    = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-    double lot      = NormalizeLots((balance * RiskFraction) / price);
+    double lots     = NormalizeLots((balance * SizingFraction) / price);
 {% elif sizing.sizer_type == "risk_based" %}
     double atr_buf[1];
     double atr_value = 0.0;
     if(CopyBuffer(AtrHandle, 0, 1, 1, atr_buf) == 1)
         atr_value = atr_buf[0];
 
-    double balance   = AccountInfoDouble(ACCOUNT_BALANCE);
-    double price     = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-    double conviction = MathAbs(signal_strength) * ConvictionScale;
-    double lot;
+    // Mirrors RiskBasedPositionSizer.compute_size():
+    //   units = equity * max_fraction * |signal| / (ATR * risk_multiplier)
+    // No volatility reading -> size 0 (no trade), same as the Python sizer.
+    double balance    = AccountInfoDouble(ACCOUNT_BALANCE);
+    double conviction = MathAbs(signal_strength);
+    double lots = 0.0;
     if(atr_value > 0)
-        lot = NormalizeLots((balance * RiskFraction * conviction) / (atr_value * price));
-    else
-        lot = NormalizeLots(balance * RiskFraction * conviction / price);
+        lots = NormalizeLots((balance * MaxFraction * conviction) / (atr_value * RiskMultiplier));
 {% endif %}
 
     // --- Trade logic ---

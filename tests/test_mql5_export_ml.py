@@ -591,3 +591,60 @@ def test_export_ml_to_mql5_onnx_raises_when_validation_fails(monkeypatch, tmp_pa
             strategy=object(),
             output_path=str(tmp_path / "invalid_onnx.mq5"),
         )
+
+
+def _patch_onnx_export_pipeline(monkeypatch, tmp_path, config):
+    monkeypatch.setattr(
+        ml_validator_module,
+        "validate_ml_strategy_onnx",
+        lambda _strategy: ValidationResult(is_valid=True, errors=[], warnings=[]),
+    )
+    monkeypatch.setattr(
+        MLStrategyIntrospector, "introspect", lambda self, _strategy: config
+    )
+    monkeypatch.setattr(
+        onnx_exporter_module,
+        "export_keras_to_onnx",
+        lambda keras_model, output_path, opset: str(tmp_path / "model.onnx"),
+    )
+
+
+def test_export_ml_to_mql5_onnx_renders_risk_based_sizing_inputs(
+    monkeypatch, tmp_path
+):
+    # Regression: the ONNX EA template referenced sizing.fraction /
+    # sizing.conviction_scale, which do not exist on SizingConfig
+    # (params dict holds max_fraction / risk_multiplier).
+    config = _sample_ml_config()
+    config.sizing = SizingConfig(
+        sizer_type="risk_based",
+        params={"max_fraction": 0.05, "risk_multiplier": 2.0},
+    )
+    _patch_onnx_export_pipeline(monkeypatch, tmp_path, config)
+
+    result = export_ml_to_mql5_onnx(
+        strategy=types.SimpleNamespace(model=types.SimpleNamespace(model="m")),
+        output_path=str(tmp_path / "risk_sized.mq5"),
+    )
+
+    assert "input double MaxFraction    = 0.0500;" in result.code
+    assert "input double RiskMultiplier = 2.0000;" in result.code
+    # sizing body mirrors RiskBasedPositionSizer.compute_size()
+    assert "(balance * MaxFraction * conviction) / (atr_value * RiskMultiplier)" in result.code
+    # trade_logic helper contract: lowercase `trade` object and `lots` variable
+    assert "CTrade  trade;" in result.code
+    assert "Trade.SetExpertMagicNumber" not in result.code
+
+
+def test_export_ml_to_mql5_onnx_renders_fixed_sizing_inputs(monkeypatch, tmp_path):
+    config = _sample_ml_config()
+    config.sizing = SizingConfig(sizer_type="fixed", params={"fraction": 0.1})
+    _patch_onnx_export_pipeline(monkeypatch, tmp_path, config)
+
+    result = export_ml_to_mql5_onnx(
+        strategy=types.SimpleNamespace(model=types.SimpleNamespace(model="m")),
+        output_path=str(tmp_path / "fixed_sized.mq5"),
+    )
+
+    assert "input double SizingFraction = 0.1000;" in result.code
+    assert "(balance * SizingFraction) / price" in result.code
