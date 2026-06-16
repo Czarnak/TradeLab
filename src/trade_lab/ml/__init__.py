@@ -1,4 +1,9 @@
-from trade_lab.ml.targets import BaseTarget, FutureReturn, DirectionalTarget
+from trade_lab.ml.targets import (
+    BaseTarget,
+    FutureReturn,
+    DirectionalTarget,
+    ExcessVolNormalizedReturn,
+)
 from trade_lab.ml.preprocessing import prepare_features, FeatureScaler
 from trade_lab.ml.validation import WalkForwardSplit, WalkForwardResult
 from trade_lab.ml.models import KerasModelWrapper, dense_model
@@ -13,6 +18,7 @@ __all__ = [
     "BaseTarget",
     "FutureReturn",
     "DirectionalTarget",
+    "ExcessVolNormalizedReturn",
     "prepare_features",
     "FeatureScaler",
     "KerasModelWrapper",
