@@ -209,8 +209,12 @@ class MLOptimizer:
             verbose=0,
         )
 
-        # Wrap model and build strategy
-        wrapped_model = _wrap_model(model, feature_matrix.feature_names)
+        # Wrap model and build strategy. Fold the refitted scaler into the model
+        # so the reported val/test metrics — and deployment — use raw features
+        # consistently with how the model was trained.
+        wrapped_model = _wrap_model(
+            model, feature_matrix.feature_names, scaler=feature_matrix.scaler
+        )
         strategy = MLStrategy(
             model=wrapped_model,
             indicators=indicators,

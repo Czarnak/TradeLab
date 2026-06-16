@@ -44,7 +44,10 @@ class MLOptimizationResult:
     feature_names : list[str]
         Ordered feature column names in the model's input space.
     scaler : StandardScaler
-        Fitted scaler from training data. Apply to new data before inference.
+        Fitted scaler from training data, kept for reference. It is **already
+        folded into** ``best_model``'s first Dense layer, so ``best_strategy``
+        and any export feed raw features directly — do NOT re-apply it before
+        inference (that would double-scale).
     val_metrics : dict[str, float]
         Full metrics dict from backtesting on validation data.
     test_metrics : dict[str, float] | None

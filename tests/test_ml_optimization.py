@@ -307,6 +307,7 @@ def test_ml_objective_happy_path_and_metric_nan_prune(monkeypatch):
     class FixedFeatureMatrix:
         def __init__(self, lagged_indicators):
             self.feature_names = ["a", "b"]
+            self.scaler = None
 
         def build(self, df, fit_scaler=False):
             return np.ones((4, 2)), np.ones((4,))
@@ -315,7 +316,7 @@ def test_ml_objective_happy_path_and_metric_nan_prune(monkeypatch):
     monkeypatch.setattr(
         ml_objective,
         "_wrap_model",
-        lambda model, names: SimpleNamespace(input_names=names),
+        lambda model, names, scaler=None: SimpleNamespace(input_names=names),
     )
 
     class FakeEngine:
@@ -429,7 +430,7 @@ def test_ml_optimizer_build_result_and_trials_df(monkeypatch):
     monkeypatch.setattr(
         ml_optimizer,
         "_wrap_model",
-        lambda model, names: SimpleNamespace(
+        lambda model, names, scaler=None: SimpleNamespace(
             input_names=names, predict=lambda X: np.zeros(len(X))
         ),
     )
@@ -533,13 +534,14 @@ def test_model_pruner_init_and_prune_model_threshold_percentile(monkeypatch):
 
 def test_model_pruner_prune_result_updates_result(monkeypatch):
     keras = _install_fake_keras(monkeypatch)
+    # prune_result imports _wrap_model from the objective module at call time,
+    # so patch it there (patching ml_pruning has no effect on the local import).
     monkeypatch.setattr(
-        ml_pruning,
+        ml_objective,
         "_wrap_model",
-        lambda model, names: SimpleNamespace(
+        lambda model, names, scaler=None: SimpleNamespace(
             input_names=names, predict=lambda X: np.zeros(len(X))
         ),
-        raising=False,
     )
 
     dense = keras.layers.Dense(name="dense_1")

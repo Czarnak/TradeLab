@@ -25,7 +25,7 @@ from trade_lab.strategies.ml_strategy import MLStrategy
 ModelFactory = Callable[[int], Any]
 
 
-def _wrap_model(model: Any, feature_names: list[str]) -> Any:
+def _wrap_model(model: Any, feature_names: list[str], scaler: Any | None = None) -> Any:
     """Rebuild a trained Keras model with named ``Input`` layers.
 
     ``MLStrategy`` resolves feature columns via ``model.input_names``. A
@@ -44,6 +44,12 @@ def _wrap_model(model: Any, feature_names: list[str]) -> Any:
         Trained model whose weights will be transferred.
     feature_names : list[str]
         Feature names that become the ``Input`` layer names.
+    scaler : object | None
+        Scaler fitted on the training features. When provided, its affine map is
+        folded into the rebuilt model's first Dense layer so the model — which
+        ``MLStrategy`` feeds *raw* features — matches what it was trained on.
+        Without this, the model is trained on scaled inputs but served raw,
+        which silently corrupts every backtest and the Optuna objective itself.
 
     Returns
     -------
@@ -51,6 +57,8 @@ def _wrap_model(model: Any, feature_names: list[str]) -> Any:
         New Functional model with ``model.input_names == feature_names``.
     """
     import keras
+
+    from trade_lab.ml.models import fold_scaler_into_first_dense, scaler_affine
 
     dense_info: list[tuple[dict, list[np.ndarray]]] = []
     for layer in model.layers:
@@ -66,7 +74,13 @@ def _wrap_model(model: Any, feature_names: list[str]) -> Any:
         x = layer(x)
         layer.set_weights(weights)
 
-    return keras.Model(inputs=inputs, outputs=x)
+    wrapped = keras.Model(inputs=inputs, outputs=x)
+
+    if scaler is not None:
+        offset, scale = scaler_affine(scaler)
+        fold_scaler_into_first_dense(wrapped, offset, scale)
+
+    return wrapped
 
 
 def _serialize_specs(specs: list[tuple[type, int, int]]) -> str:
@@ -239,8 +253,11 @@ class MLObjective:
             verbose=0,
         )
 
-        # Step 5 — Evaluate via backtest
-        wrapped_model = _wrap_model(model, feature_matrix.feature_names)
+        # Step 5 — Evaluate via backtest. Fold the fitted scaler into the model
+        # so the backtest (raw features) matches training (scaled features).
+        wrapped_model = _wrap_model(
+            model, feature_matrix.feature_names, scaler=feature_matrix.scaler
+        )
         strategy = MLStrategy(
             model=wrapped_model,
             indicators=indicators,

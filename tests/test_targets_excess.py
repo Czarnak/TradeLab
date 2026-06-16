@@ -43,8 +43,11 @@ def test_rolling_matches_legacy_manual_formula():
     df = _close_df(np.linspace(100.0, 130.0, 40))
     periods, vol_window, drift_window, scale = 1, 3, 5, 1.0
     out = ExcessVolNormalizedReturn(
-        periods=periods, vol_window=vol_window, drift_window=drift_window,
-        scale=scale, drift_method="rolling",
+        periods=periods,
+        vol_window=vol_window,
+        drift_window=drift_window,
+        scale=scale,
+        drift_method="rolling",
     ).generate(df)
 
     close = df["Close"]
@@ -61,8 +64,12 @@ def test_ewma_matches_manual_formula():
     df = _close_df(np.linspace(100.0, 130.0, 60))
     periods, vol_window, drift_window, span, scale = 1, 3, 5, 4, 1.0
     out = ExcessVolNormalizedReturn(
-        periods=periods, vol_window=vol_window, drift_window=drift_window,
-        drift_span=span, scale=scale, drift_method="ewma",
+        periods=periods,
+        vol_window=vol_window,
+        drift_window=drift_window,
+        drift_span=span,
+        scale=scale,
+        drift_method="ewma",
     ).generate(df)
 
     close = df["Close"]
@@ -79,8 +86,11 @@ def test_expanding_matches_manual_formula():
     df = _close_df(np.linspace(100.0, 130.0, 40))
     periods, vol_window, drift_window, scale = 1, 3, 5, 1.0
     out = ExcessVolNormalizedReturn(
-        periods=periods, vol_window=vol_window, drift_window=drift_window,
-        scale=scale, drift_method="expanding",
+        periods=periods,
+        vol_window=vol_window,
+        drift_window=drift_window,
+        scale=scale,
+        drift_method="expanding",
     ).generate(df)
 
     close = df["Close"]
@@ -124,8 +134,9 @@ def test_ewma_pushes_labels_negative_in_a_bull_market():
         **common, drift_method="ewma", drift_span=63
     ).generate(df)
 
-    frac_neg = lambda s: float(np.mean(s.dropna().to_numpy() < 0))
-    assert ewma.mean() < roll.mean()      # strictly more demeaned
+    def frac_neg(s):
+        return float(np.mean(s.dropna().to_numpy() < 0))
+    assert ewma.mean() < roll.mean()  # strictly more demeaned
     assert frac_neg(ewma) > frac_neg(roll)  # strictly more short-able labels
 
 

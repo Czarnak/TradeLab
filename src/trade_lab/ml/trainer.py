@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from trade_lab.indicators.base import BaseIndicator
-from trade_lab.ml.models import KerasModelWrapper
+from trade_lab.ml.models import KerasModelWrapper, wrap_with_scaling
 from trade_lab.ml.preprocessing import FeatureScaler, prepare_features
 from trade_lab.ml.targets import BaseTarget
 from trade_lab.ml.validation import WalkForwardResult, WalkForwardSplit
@@ -128,7 +128,10 @@ class MLTrainer:
             verbose=verbose,
         )
 
-        return KerasModelWrapper(model, feature_columns)
+        # Fold the fitted scaler into the model so inference (and export) feed
+        # raw features — see wrap_with_scaling. Without this the model is trained
+        # on scaled inputs but served raw, silently degrading every prediction.
+        return wrap_with_scaling(model, feature_columns, self.scaler)
 
     # ------------------------------------------------------------------
     # Walk-forward validation
@@ -176,6 +179,7 @@ class MLTrainer:
             y_test = y[fold.test_idx]
 
             # Fit scaler on training data only
+            scaler_copy = None
             if self.scaler:
                 scaler_copy = FeatureScaler(method=self.scaler.method)
                 X_train = scaler_copy.fit_transform(X_train, feature_columns)
@@ -203,7 +207,10 @@ class MLTrainer:
                     test_targets=pd.Series(
                         y_test, index=index[fold.test_idx], name="target"
                     ),
-                    model=KerasModelWrapper(model, feature_columns),
+                    # preds above were computed on the scaled X_test with the
+                    # unfolded model; the stored model folds the fold's scaler so
+                    # it is raw-feature-native for deployment.
+                    model=wrap_with_scaling(model, feature_columns, scaler_copy),
                 )
             )
 

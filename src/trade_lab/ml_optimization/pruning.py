@@ -223,8 +223,11 @@ class ModelPruner:
         fine_tuned_model.compile(optimizer="adam", loss=directional_loss())
         fine_tuned_model.fit(X_train, y_train, epochs=fine_tune_epochs, verbose=0)
 
-        # Step 6 — Wrap and rebuild strategy
-        wrapped_model = _wrap_model(fine_tuned_model, surviving_names)
+        # Step 6 — Wrap and rebuild strategy. Fold the refitted scaler into the
+        # fine-tuned model so the pruned strategy serves raw features correctly.
+        wrapped_model = _wrap_model(
+            fine_tuned_model, surviving_names, scaler=feature_matrix.scaler
+        )
         strategy = MLStrategy(
             model=wrapped_model,
             indicators=filtered_indicators,

@@ -80,3 +80,18 @@ class FeatureScaler:
         """Fit on data and return transformed result."""
         self.fit(X, feature_names)
         return self.transform(X)
+
+    def affine(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return ``(offset, scale)`` so that ``transform(X) == (X - offset) / scale``.
+
+        Both supported methods reduce to a per-feature affine map:
+        ``standard`` uses ``(mean, std)`` and ``minmax`` uses ``(min, range)``.
+        Exposing it in this canonical form lets callers fold the scaling into a
+        model's first Dense layer (see ``fold_scaler_into_first_dense``) so the
+        deployed model is raw-feature-native.
+        """
+        if not self._params:
+            raise RuntimeError("Scaler has not been fitted yet. Call fit() first.")
+        if self.method == "standard":
+            return self._params["mean"], self._params["std"]
+        return self._params["min"], self._params["range"]
