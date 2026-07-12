@@ -78,6 +78,26 @@ class BacktestEngine:
         fill at ``Open[t]``), removing the same-bar-close lookahead. Protective
         stops (TP/SL/trailing/liquidation) remain level-based intrabar checks and
         equity is always marked-to-market at the close, regardless of this setting.
+    rebalance_band : float | None
+        Opt-in position rebalancing. When ``None`` (default) the engine only
+        opens a position when flat and holds a fixed size until an exit
+        condition fires — the legacy, backward-compatible behaviour. When set
+        to a fraction ``> 0`` (e.g. ``0.25``), a bar that keeps an open
+        position (same direction, no TP/SL/liquidation/exit-signal event)
+        recomputes the sizer's target size for the current signal and trades
+        the difference whenever ``abs(target - current) / abs(current)``
+        exceeds ``rebalance_band``. Requires ``strategy.position_sizer`` to be
+        set (the default full-equity sizing has no meaningful "target" to
+        track); raises ``ValueError`` at run time otherwise.
+
+        Two deliberate limits: (1) a target size of exactly 0 (zero signal or
+        degenerate ATR) is ignored — rebalancing never closes a position, only
+        the exit rules (exit threshold, sign flip, TP/SL/liquidation) do; and
+        (2) fixed take-profit/stop-loss levels are computed once from the
+        *initial* entry price and are NOT recomputed when a rebalance increase
+        rebases the size-weighted average entry price, so a fixed-points stop's
+        distance relative to the new cost basis drifts. Trailing stops are
+        unaffected (they track the close, not the entry).
 
     Notes
     -----
@@ -117,6 +137,7 @@ class BacktestEngine:
         maintenance_margin: float = 0.5,
         financing_rate: float = 0.0,
         execute_on: str = "close",
+        rebalance_band: float | None = None,
     ):
         if leverage < 1.0:
             raise ValueError("leverage must be >= 1.0")
@@ -128,6 +149,8 @@ class BacktestEngine:
             raise ValueError("financing_rate must be finite")
         if execute_on not in ("close", "next_open"):
             raise ValueError("execute_on must be 'close' or 'next_open'")
+        if rebalance_band is not None and rebalance_band <= 0:
+            raise ValueError("rebalance_band must be > 0")
 
         self.strategy = strategy
         self.execute_on = execute_on
@@ -142,6 +165,7 @@ class BacktestEngine:
         self.contract_size = contract_size
         self.maintenance_margin = maintenance_margin
         self.financing_rate = financing_rate
+        self.rebalance_band = rebalance_band
 
     def run(self) -> BacktestResult:
         """Execute the full backtest pipeline including data download.
@@ -186,10 +210,11 @@ class BacktestEngine:
                 "Set strategy= at construction or assign engine.strategy before calling run."
             )
         df = self.strategy.generate_signals(df.copy())
-        equity_curve, trade_log = self._simulate(df)
+        equity_curve, trade_log, rebalance_count = self._simulate(df)
         metrics = compute_metrics(
             equity_curve, trade_log, risk_free_rate=self.risk_free_rate
         )
+        metrics["rebalance_count"] = rebalance_count
         return BacktestResult(
             df=df,
             equity_curve=equity_curve,
@@ -248,11 +273,112 @@ class BacktestEngine:
         atr = pd.Series(tr).rolling(window=period).mean().to_numpy()
         return atr
 
+    def _entry_style_price(self, fill: float, direction: int) -> float:
+        """Slippage-adjusted price for opening/adding to a position.
+
+        ``direction == 1`` is the buy-side fill used by a long entry;
+        ``direction == -1`` is the sell-side fill used by a short entry.
+        Also used as the stable reference price for rebalance target sizing
+        (computed on the existing position's direction, independent of
+        whether the eventual rebalance turns out to increase or decrease).
+        """
+        if direction == 1:
+            return fill * (1 + self.slippage)
+        return fill * (1 - self.slippage)
+
+    def _target_magnitude(
+        self,
+        sig: float,
+        equity: float,
+        ref_price: float,
+        vol: float | None,
+        has_sizer: bool,
+        lev: float,
+        cs: float,
+    ) -> float:
+        """Position-size magnitude (units) for a signal, in a single place.
+
+        Mirrors the entry-sizing formula: uses the strategy's position sizer
+        when present (scaled by leverage and the contract multiplier), or
+        falls back to full-equity sizing rounded to ``_SIZE_PRECISION``
+        decimal places when no sizer is configured. Shared by both the entry
+        path and the rebalance path so the two never drift apart.
+        """
+        if has_sizer:
+            return (
+                self.strategy.position_sizer.compute_size(
+                    sig, equity, ref_price, volatility=vol
+                )
+                * lev
+                / cs
+            )
+        return round(equity * lev / (ref_price * cs), _SIZE_PRECISION)
+
+    def _apply_rebalance_fill(
+        self,
+        *,
+        direction: int,
+        pos: float,
+        entry_price: float,
+        entry_comm: float,
+        cash: float,
+        used_margin: float,
+        trade_units: float,
+        trade_price: float,
+        is_increase: bool,
+        cs: float,
+        lev: float,
+    ) -> tuple[float, float, float, float, float, float, float]:
+        """Apply one rebalance fill (trade the delta between target and held size).
+
+        Increasing a position rebases the size-weighted average entry price
+        and folds the fill's commission into ``entry_comm`` (mirroring the
+        entry path). Reducing a position realises PnL on the closed units at
+        ``trade_price`` against the unchanged ``entry_price``, leaving
+        ``entry_price``/``entry_comm`` of the remaining units untouched —
+        ``entry_comm`` and any accrued financing are one-time costs of the
+        trade's life and are only ever subtracted once, at the final close.
+
+        Returns
+        -------
+        tuple
+            ``(pos, entry_price, entry_comm, cash, used_margin, comm,
+            realized_leg_pnl)`` — the updated state plus this leg's own
+            commission and (for a decrease) realised PnL, both of which the
+            caller accumulates into the open trade's running totals.
+        """
+        is_buy = is_increase == (direction == 1)
+        notional = trade_units * trade_price * cs
+        comm = notional * self.commission
+        old_abs = abs(pos)
+
+        if is_increase:
+            new_abs = old_abs + trade_units
+            entry_price = (old_abs * entry_price + trade_units * trade_price) / new_abs
+            entry_comm = entry_comm + comm
+            used_margin = used_margin + notional / lev
+            cash = cash - (notional + comm) if is_buy else cash + (notional - comm)
+            realized_leg_pnl = 0.0
+        else:
+            new_abs = old_abs - trade_units
+            used_margin = used_margin * (new_abs / old_abs) if old_abs > 0 else 0.0
+            if is_buy:  # buying back to reduce a short
+                cost_leg = notional + comm
+                cash = cash - cost_leg
+                realized_leg_pnl = trade_units * entry_price * cs - cost_leg
+            else:  # selling to reduce a long
+                proceeds_leg = notional - comm
+                cash = cash + proceeds_leg
+                realized_leg_pnl = proceeds_leg - trade_units * entry_price * cs
+
+        pos = direction * new_abs
+        return pos, entry_price, entry_comm, cash, used_margin, comm, realized_leg_pnl
+
     # ------------------------------------------------------------------
     # Simulation
     # ------------------------------------------------------------------
 
-    def _simulate(self, df: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame]:
+    def _simulate(self, df: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame, int]:
         n = len(df)
         signals = df["signal_strength"].to_numpy()
         closes = df["Close"].to_numpy()
@@ -261,6 +387,12 @@ class BacktestEngine:
         dates = df.index
         has_sizer = self.strategy.position_sizer is not None
         atr = self._compute_atr(df) if has_sizer else None
+
+        if self.rebalance_band is not None and not has_sizer:
+            raise ValueError(
+                "rebalance_band requires strategy.position_sizer to be set "
+                "(rebalancing is undefined for the default full-equity sizing)"
+            )
 
         # Execution timing. In "next_open" mode the decision at bar i uses the
         # prior bar's signal and signal-driven fills happen at this bar's open
@@ -291,6 +423,12 @@ class BacktestEngine:
         tp_obj = None
         sl_obj = None
         ts_obj = None
+        # Rebalancing: PnL/commission realised by partial reduces and the
+        # count of rebalance fills, both scoped to the currently open trade.
+        realized_pnl_accum = 0.0
+        rebalance_decrease_comm_accum = 0.0
+        trade_rebalance_count = 0
+        rebalance_count = 0  # whole-backtest total, for the summary metric
 
         equity_arr = np.empty(n)
         trades: list[dict] = []
@@ -299,6 +437,7 @@ class BacktestEngine:
         xt = self.strategy.exit_threshold
         allow_long = self.strategy.allow_long
         allow_short = self.strategy.allow_short
+        rebalance_band = self.rebalance_band
 
         def _binding_stop(
             stop_loss_level: float | None,
@@ -328,6 +467,8 @@ class BacktestEngine:
 
         def _reset_risk_state() -> None:
             nonlocal direction, tp_level, sl_level, ts_level, tp_obj, sl_obj, ts_obj
+            nonlocal realized_pnl_accum, rebalance_decrease_comm_accum
+            nonlocal trade_rebalance_count
             direction = 0
             tp_level = None
             sl_level = None
@@ -335,6 +476,9 @@ class BacktestEngine:
             tp_obj = None
             sl_obj = None
             ts_obj = None
+            realized_pnl_accum = 0.0
+            rebalance_decrease_comm_accum = 0.0
+            trade_rebalance_count = 0
 
         for i in range(n):
             price = closes[i]  # mark-to-market / financing / intrabar reference
@@ -379,6 +523,7 @@ class BacktestEngine:
                         proceeds
                         - (pos * entry_price * cs + entry_comm)
                         - financing_accrued
+                        + realized_pnl_accum
                     )
                     cash += proceeds
                     trades.append(
@@ -390,10 +535,13 @@ class BacktestEngine:
                             "exit_price": exec_price,
                             "size": pos,
                             "pnl": pnl,
-                            "commission": entry_comm + comm,
+                            "commission": (
+                                entry_comm + comm + rebalance_decrease_comm_accum
+                            ),
                             "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": "tp",
+                            "rebalance_count": trade_rebalance_count,
                         }
                     )
                     pos = 0.0
@@ -407,6 +555,7 @@ class BacktestEngine:
                         proceeds
                         - (pos * entry_price * cs + entry_comm)
                         - financing_accrued
+                        + realized_pnl_accum
                     )
                     cash += proceeds
                     trades.append(
@@ -418,10 +567,13 @@ class BacktestEngine:
                             "exit_price": exec_price,
                             "size": pos,
                             "pnl": pnl,
-                            "commission": entry_comm + comm,
+                            "commission": (
+                                entry_comm + comm + rebalance_decrease_comm_accum
+                            ),
                             "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": binding[1],
+                            "rebalance_count": trade_rebalance_count,
                         }
                     )
                     pos = 0.0
@@ -435,6 +587,7 @@ class BacktestEngine:
                         proceeds
                         - (pos * entry_price * cs + entry_comm)
                         - financing_accrued
+                        + realized_pnl_accum
                     )
                     cash += proceeds
                     trades.append(
@@ -446,14 +599,70 @@ class BacktestEngine:
                             "exit_price": exec_price,
                             "size": pos,
                             "pnl": pnl,
-                            "commission": entry_comm + comm,
+                            "commission": (
+                                entry_comm + comm + rebalance_decrease_comm_accum
+                            ),
                             "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": "signal",
+                            "rebalance_count": trade_rebalance_count,
                         }
                     )
                     pos = 0.0
                     _reset_risk_state()
+
+                elif rebalance_band is not None and not np.isnan(sig):
+                    current_equity = cash + pos * price * cs
+                    if current_equity > 0:
+                        vol = atr[i] if atr is not None else None
+                        ref_price = self._entry_style_price(fill, direction)
+                        magnitude = self._target_magnitude(
+                            sig, current_equity, ref_price, vol, has_sizer, lev, cs
+                        )
+                        target_signed = direction * magnitude
+                        delta = target_signed - pos
+                        # magnitude == 0 (zero signal / degenerate ATR) is NOT a
+                        # rebalance: draining the position to exactly zero here
+                        # would bypass the close paths (no trade row, no
+                        # _reset_risk_state) — closing is the exit rules' job.
+                        if (
+                            abs(pos) > 0
+                            and magnitude > 0.0
+                            and abs(delta) / abs(pos) > rebalance_band
+                        ):
+                            is_increase = abs(target_signed) > abs(pos)
+                            trade_units = abs(delta)
+                            trade_price = (
+                                ref_price
+                                if is_increase
+                                else self._entry_style_price(fill, -direction)
+                            )
+                            (
+                                pos,
+                                entry_price,
+                                entry_comm,
+                                cash,
+                                used_margin,
+                                comm,
+                                realized_leg_pnl,
+                            ) = self._apply_rebalance_fill(
+                                direction=direction,
+                                pos=pos,
+                                entry_price=entry_price,
+                                entry_comm=entry_comm,
+                                cash=cash,
+                                used_margin=used_margin,
+                                trade_units=trade_units,
+                                trade_price=trade_price,
+                                is_increase=is_increase,
+                                cs=cs,
+                                lev=lev,
+                            )
+                            realized_pnl_accum += realized_leg_pnl
+                            if not is_increase:
+                                rebalance_decrease_comm_accum += comm
+                            trade_rebalance_count += 1
+                            rebalance_count += 1
 
             elif pos < 0:  # short
                 high = highs[i]
@@ -480,6 +689,7 @@ class BacktestEngine:
                         - cost
                         - entry_comm
                         - financing_accrued
+                        + realized_pnl_accum
                     )
                     cash -= cost
                     trades.append(
@@ -491,10 +701,13 @@ class BacktestEngine:
                             "exit_price": exec_price,
                             "size": abs(pos),
                             "pnl": pnl,
-                            "commission": entry_comm + comm,
+                            "commission": (
+                                entry_comm + comm + rebalance_decrease_comm_accum
+                            ),
                             "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": "tp",
+                            "rebalance_count": trade_rebalance_count,
                         }
                     )
                     pos = 0.0
@@ -509,6 +722,7 @@ class BacktestEngine:
                         - cost
                         - entry_comm
                         - financing_accrued
+                        + realized_pnl_accum
                     )
                     cash -= cost
                     trades.append(
@@ -520,10 +734,13 @@ class BacktestEngine:
                             "exit_price": exec_price,
                             "size": abs(pos),
                             "pnl": pnl,
-                            "commission": entry_comm + comm,
+                            "commission": (
+                                entry_comm + comm + rebalance_decrease_comm_accum
+                            ),
                             "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": binding[1],
+                            "rebalance_count": trade_rebalance_count,
                         }
                     )
                     pos = 0.0
@@ -538,6 +755,7 @@ class BacktestEngine:
                         - cost
                         - entry_comm
                         - financing_accrued
+                        + realized_pnl_accum
                     )
                     cash -= cost
                     trades.append(
@@ -549,14 +767,70 @@ class BacktestEngine:
                             "exit_price": exec_price,
                             "size": abs(pos),
                             "pnl": pnl,
-                            "commission": entry_comm + comm,
+                            "commission": (
+                                entry_comm + comm + rebalance_decrease_comm_accum
+                            ),
                             "financing": financing_accrued,
                             "bars_held": i - entry_bar,
                             "exit_reason": "signal",
+                            "rebalance_count": trade_rebalance_count,
                         }
                     )
                     pos = 0.0
                     _reset_risk_state()
+
+                elif rebalance_band is not None and not np.isnan(sig):
+                    current_equity = cash + pos * price * cs
+                    if current_equity > 0:
+                        vol = atr[i] if atr is not None else None
+                        ref_price = self._entry_style_price(fill, direction)
+                        magnitude = self._target_magnitude(
+                            sig, current_equity, ref_price, vol, has_sizer, lev, cs
+                        )
+                        target_signed = direction * magnitude
+                        delta = target_signed - pos
+                        # magnitude == 0 (zero signal / degenerate ATR) is NOT a
+                        # rebalance: draining the position to exactly zero here
+                        # would bypass the close paths (no trade row, no
+                        # _reset_risk_state) — closing is the exit rules' job.
+                        if (
+                            abs(pos) > 0
+                            and magnitude > 0.0
+                            and abs(delta) / abs(pos) > rebalance_band
+                        ):
+                            is_increase = abs(target_signed) > abs(pos)
+                            trade_units = abs(delta)
+                            trade_price = (
+                                ref_price
+                                if is_increase
+                                else self._entry_style_price(fill, -direction)
+                            )
+                            (
+                                pos,
+                                entry_price,
+                                entry_comm,
+                                cash,
+                                used_margin,
+                                comm,
+                                realized_leg_pnl,
+                            ) = self._apply_rebalance_fill(
+                                direction=direction,
+                                pos=pos,
+                                entry_price=entry_price,
+                                entry_comm=entry_comm,
+                                cash=cash,
+                                used_margin=used_margin,
+                                trade_units=trade_units,
+                                trade_price=trade_price,
+                                is_increase=is_increase,
+                                cs=cs,
+                                lev=lev,
+                            )
+                            realized_pnl_accum += realized_leg_pnl
+                            if not is_increase:
+                                rebalance_decrease_comm_accum += comm
+                            trade_rebalance_count += 1
+                            rebalance_count += 1
 
             # Skip new entries on bars with no signal or depleted equity.
             current_equity = cash + pos * price * cs
@@ -570,18 +844,15 @@ class BacktestEngine:
             # ---- Open new position if flat ----
             if pos == 0.0:
                 if allow_long and sig > et:
-                    exec_price = fill * (1 + self.slippage)
-                    size = (
-                        self.strategy.position_sizer.compute_size(
-                            sig,
-                            cash,
-                            exec_price,
-                            volatility=atr[i] if atr is not None else None,
-                        )
-                        * lev
-                        / cs
-                        if has_sizer
-                        else round(cash * lev / (exec_price * cs), _SIZE_PRECISION)
+                    exec_price = self._entry_style_price(fill, 1)
+                    size = self._target_magnitude(
+                        sig,
+                        cash,
+                        exec_price,
+                        atr[i] if atr is not None else None,
+                        has_sizer,
+                        lev,
+                        cs,
                     )
                     if size > 0:
                         comm = size * exec_price * cs * self.commission
@@ -592,6 +863,12 @@ class BacktestEngine:
                         entry_bar = i
                         entry_comm = comm
                         financing_accrued = 0.0
+                        # Defense in depth: these are reset by _reset_risk_state
+                        # on every close path, but a fresh trade must never
+                        # inherit rebalance accumulators under any code path.
+                        realized_pnl_accum = 0.0
+                        rebalance_decrease_comm_accum = 0.0
+                        trade_rebalance_count = 0
                         used_margin = size * exec_price * cs / lev
                         direction = 1
                         tp_obj = self.strategy.take_profit
@@ -615,18 +892,15 @@ class BacktestEngine:
                         )
 
                 elif allow_short and sig < -et:
-                    exec_price = fill * (1 - self.slippage)
-                    size = (
-                        self.strategy.position_sizer.compute_size(
-                            sig,
-                            cash,
-                            exec_price,
-                            volatility=atr[i] if atr is not None else None,
-                        )
-                        * lev
-                        / cs
-                        if has_sizer
-                        else round(cash * lev / (exec_price * cs), _SIZE_PRECISION)
+                    exec_price = self._entry_style_price(fill, -1)
+                    size = self._target_magnitude(
+                        sig,
+                        cash,
+                        exec_price,
+                        atr[i] if atr is not None else None,
+                        has_sizer,
+                        lev,
+                        cs,
                     )
                     if size > 0:
                         comm = size * exec_price * cs * self.commission
@@ -637,6 +911,12 @@ class BacktestEngine:
                         entry_bar = i
                         entry_comm = comm
                         financing_accrued = 0.0
+                        # Defense in depth: these are reset by _reset_risk_state
+                        # on every close path, but a fresh trade must never
+                        # inherit rebalance accumulators under any code path.
+                        realized_pnl_accum = 0.0
+                        rebalance_decrease_comm_accum = 0.0
+                        trade_rebalance_count = 0
                         used_margin = size * exec_price * cs / lev
                         direction = -1
                         tp_obj = self.strategy.take_profit
@@ -663,4 +943,4 @@ class BacktestEngine:
 
         equity_curve = pd.Series(equity_arr, index=dates, name="equity")
         trade_log = pd.DataFrame(trades)
-        return equity_curve, trade_log
+        return equity_curve, trade_log, rebalance_count

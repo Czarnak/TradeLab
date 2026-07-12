@@ -136,6 +136,7 @@ def test_ewma_pushes_labels_negative_in_a_bull_market():
 
     def frac_neg(s):
         return float(np.mean(s.dropna().to_numpy() < 0))
+
     assert ewma.mean() < roll.mean()  # strictly more demeaned
     assert frac_neg(ewma) > frac_neg(roll)  # strictly more short-able labels
 

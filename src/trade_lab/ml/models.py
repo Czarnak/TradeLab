@@ -30,7 +30,10 @@ class KerasModelWrapper:
     def predict(self, features: pd.DataFrame) -> np.ndarray:
         """Predict signal strength from a feature DataFrame.
 
-        Returns a 1-D array of values in [-1, 1] (tanh output).
+        Returns a 1-D array of predicted values. The output range depends on
+        the wrapped model's head: a tanh head (``dense_model`` default)
+        yields values in ``[-1, 1]``; a linear head (``head="linear"``) is
+        unbounded and tracks the target's native scale instead.
         """
         X = features.to_numpy(dtype=np.float64)
         if self.scaler is not None:
@@ -282,11 +285,13 @@ def dense_model(
     dropout: float = 0.2,
     learning_rate: float = 0.001,
     magnitude_weight: float = 0.1,
+    head: str = "tanh",
+    loss: str = "directional",
 ) -> Callable:
     """Return a builder for a feed-forward Dense network.
 
     Architecture:
-        Input → [Dense(units, relu) → Dropout] × N → Dense(1, tanh)
+        Input → [Dense(units, relu) → Dropout] × N → Dense(1, head)
 
     Parameters
     ----------
@@ -301,8 +306,34 @@ def dense_model(
         ``directional_loss``.  Default 0.1 keeps direction dominant while still
         anchoring magnitude; raise it (e.g. 1.0) to weight magnitude fidelity
         more strongly.  Values ``<= 0`` leave magnitude unconstrained for
-        correctly-signed predictions and are not recommended.
+        correctly-signed predictions and are not recommended.  Unused when
+        ``loss="mse"``.
+    head : str
+        Final-layer activation: ``"tanh"`` (default, bounded ``[-1, 1]``
+        output) or ``"linear"`` (unbounded, ``Dense(1)`` with no activation).
+    loss : str
+        Compiled loss: ``"directional"`` (default, ``directional_loss``) or
+        ``"mse"`` (plain ``"mse"`` string, kept as a string for simple
+        serialization).
+
+    Notes
+    -----
+    The default tanh head paired with the directional hinge loss saturates
+    when targets are hard directional labels, and wastes output range when
+    targets live near zero (e.g. small log returns) since the hinge only
+    penalises wrong-sign predictions and the tanh squashes everything toward
+    ``±1``.  ``head="linear", loss="mse"`` frees the output scale to track the
+    target's native magnitude directly, at the cost of the directional-hinge
+    guardrail against saturation.
     """
+    if head not in ("tanh", "linear"):
+        raise ValueError(
+            f"dense_model: unknown head '{head}', expected 'tanh' or 'linear'"
+        )
+    if loss not in ("directional", "mse"):
+        raise ValueError(
+            f"dense_model: unknown loss '{loss}', expected 'directional' or 'mse'"
+        )
     if layers is None:
         layers = [64, 32]
 
@@ -314,12 +345,204 @@ def dense_model(
         for units in layers:
             x = keras.layers.Dense(units, activation="relu")(x)
             x = keras.layers.Dropout(dropout)(x)
-        output = keras.layers.Dense(1, activation="tanh")(x)
+        if head == "tanh":
+            output = keras.layers.Dense(1, activation="tanh")(x)
+        else:
+            output = keras.layers.Dense(1)(x)
+
+        model = keras.Model(inputs, output)
+        compiled_loss = (
+            directional_loss(magnitude_weight=magnitude_weight)
+            if loss == "directional"
+            else "mse"
+        )
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+            loss=compiled_loss,
+        )
+        return model
+
+    return builder
+
+
+# ------------------------------------------------------------------
+# Ensemble export — average several trained members without distillation
+# ------------------------------------------------------------------
+# Distilling a seed ensemble into a single student model compresses the
+# prediction spread (observed ~4x on holdout), which breaks calibrated
+# entry/exit thresholds tuned against the ensemble's raw output. Averaging
+# the members' outputs inside a single functional graph preserves each
+# member's weights exactly and is directly exportable to ONNX.
+# ------------------------------------------------------------------
+
+
+def ensemble_average_model(members: list, input_dim: int | None = None):
+    """Wrap already-trained ``members`` in a single functional averaging model.
+
+    Builds a fresh ``keras.Input``, calls every member on it (reusing their
+    trained weights unchanged), and averages the outputs with
+    ``keras.layers.Average``. The result is a single exportable
+    ``keras.Model`` — no retraining or distillation involved.
+
+    Parameters
+    ----------
+    members : list
+        Already-trained Keras models sharing the same single-input shape.
+    input_dim : int | None
+        Width of the shared input. If ``None`` (default), inferred from
+        ``members[0].input_shape``.
+
+    Returns
+    -------
+    keras.Model
+        Inference-only (uncompiled) model averaging ``members``' outputs. If
+        ``len(members) == 1``, this is a passthrough model wrapping that
+        single member (``keras.layers.Average`` requires >= 2 inputs).
+
+    Raises
+    ------
+    ValueError
+        If ``members`` is empty, or if any member's input dimension does not
+        match ``input_dim`` (explicit or inferred).
+    """
+    import keras
+
+    if not members:
+        raise ValueError("ensemble_average_model: members must not be empty")
+
+    if input_dim is None:
+        input_dim = members[0].input_shape[-1]
+
+    for i, member in enumerate(members):
+        member_input_dim = member.input_shape[-1]
+        if member_input_dim != input_dim:
+            raise ValueError(
+                f"ensemble_average_model: member {i} input dim "
+                f"{member_input_dim} != expected {input_dim}"
+            )
+
+    inputs = keras.Input(shape=(input_dim,))
+
+    if len(members) == 1:
+        output = members[0](inputs)
+        return keras.Model(inputs, output)
+
+    outputs = [member(inputs) for member in members]
+    averaged = keras.layers.Average()(outputs)
+    return keras.Model(inputs, averaged)
+
+
+# ------------------------------------------------------------------
+# Quantile regression
+# ------------------------------------------------------------------
+# Predicts several quantiles of the target distribution in one forward pass
+# instead of a single point estimate, giving a calibrated uncertainty band
+# (e.g. the 10th/50th/90th percentile of expected return) for downstream
+# position sizing.
+# ------------------------------------------------------------------
+
+
+def _validate_quantiles(quantiles: tuple[float, ...]) -> None:
+    if not quantiles:
+        raise ValueError("quantiles must be a non-empty tuple")
+    for q in quantiles:
+        if not (0.0 < q < 1.0):
+            raise ValueError(f"quantiles must all lie in (0, 1), got {q}")
+
+
+def pinball_loss(quantiles: tuple[float, ...]) -> Callable:
+    """Return a Keras loss function for multi-quantile regression.
+
+    For each quantile ``q`` and error ``e = y_true - y_pred_q`` the pinball
+    (quantile) loss is ``max(q * e, (q - 1) * e)`` — an asymmetric penalty
+    that is steeper on the side that would make ``y_pred_q`` violate its
+    target quantile. The returned loss averages this over every quantile and
+    every sample in the batch.
+
+    Parameters
+    ----------
+    quantiles : tuple[float, ...]
+        Target quantiles in ``(0, 1)``, e.g. ``(0.1, 0.5, 0.9)``. Must be
+        non-empty.
+
+    Returns
+    -------
+    Callable
+        A Keras-compatible loss function ``loss_fn(y_true, y_pred) -> Tensor``.
+        ``y_true`` may have shape ``(batch,)`` or ``(batch, 1)``; ``y_pred``
+        must have shape ``(batch, len(quantiles))`` — one column per quantile,
+        broadcast against the (single) target column. Named
+        ``'pinball_loss'`` for Keras history tracking.
+
+    Raises
+    ------
+    ValueError
+        If ``quantiles`` is empty or contains a value outside ``(0, 1)``.
+    """
+    _validate_quantiles(quantiles)
+
+    def loss_fn(y_true, y_pred):
+        import tensorflow as tf
+
+        q = tf.constant(quantiles, dtype=y_pred.dtype)
+        y_true = tf.reshape(tf.cast(y_true, y_pred.dtype), (-1, 1))
+        error = y_true - y_pred
+        loss = tf.maximum(q * error, (q - 1.0) * error)
+        return tf.reduce_mean(loss)
+
+    loss_fn.__name__ = "pinball_loss"
+    return loss_fn
+
+
+def quantile_model(
+    layers: list[int] | None = None,
+    dropout: float = 0.2,
+    learning_rate: float = 0.001,
+    quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
+) -> Callable:
+    """Return a builder for a multi-quantile feed-forward Dense network.
+
+    Architecture:
+        Input → [Dense(units, relu) → Dropout] × N → Dense(len(quantiles))
+
+    Shares the same trunk shape as ``dense_model`` but ends in a linear head
+    with one output per requested quantile, compiled with ``pinball_loss``.
+
+    Parameters
+    ----------
+    layers : list[int]
+        Hidden layer sizes (default ``[64, 32]``).
+    dropout : float
+        Dropout rate between hidden layers.
+    learning_rate : float
+        Adam optimiser learning rate.
+    quantiles : tuple[float, ...]
+        Target quantiles in ``(0, 1)`` (default ``(0.1, 0.5, 0.9)``). Must be
+        non-empty; validated eagerly here (and again by ``pinball_loss``).
+
+    Raises
+    ------
+    ValueError
+        If ``quantiles`` is empty or contains a value outside ``(0, 1)``.
+    """
+    _validate_quantiles(quantiles)
+    if layers is None:
+        layers = [64, 32]
+
+    def builder(input_dim: int):
+        import keras
+
+        inputs = keras.Input(shape=(input_dim,))
+        x = inputs
+        for units in layers:
+            x = keras.layers.Dense(units, activation="relu")(x)
+            x = keras.layers.Dropout(dropout)(x)
+        output = keras.layers.Dense(len(quantiles))(x)
 
         model = keras.Model(inputs, output)
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-            loss=directional_loss(magnitude_weight=magnitude_weight),
+            loss=pinball_loss(quantiles),
         )
         return model
 

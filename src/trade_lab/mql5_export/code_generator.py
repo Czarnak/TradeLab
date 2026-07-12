@@ -194,9 +194,18 @@ def _format_ml_summary(config) -> list[str]:
     Returns
     -------
     list[str]
-        One entry per Dense layer describing its shape and activation.
+        One entry per Dense layer describing its shape and activation. For a
+        model with no top-level Dense layers (e.g. a seed-ensemble ONNX
+        export whose members are nested ``Functional`` sub-models averaged
+        with ``Average``), a single generic line is emitted instead —
+        ``config.layers`` is empty for such models, and there is no
+        per-layer weight data to report at this level.
     """
     summaries = [f"Features: {config.feature_names}"]
+    if not config.layers:
+        if config.nested_summary:
+            summaries.append(config.nested_summary)
+        return summaries
     for layer in config.layers:
         summaries.append(
             f"Layer {layer.index}: Dense({layer.units_in} → {layer.units_out}, "

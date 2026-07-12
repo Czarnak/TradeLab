@@ -20,6 +20,12 @@ from trade_lab.sizing.fixed import FixedPositionSizer
 from trade_lab.sizing.risk_based import RiskBasedPositionSizer
 from trade_lab.strategies.ml_strategy import MLStrategy
 
+# Keras container classes wrapping a nested sub-graph. Seed-ensemble ONNX
+# exports call each trained member as a layer inside a shared functional
+# graph, so members show up as one of these at the top level instead of a
+# Dense layer — see ``ensemble_average_model`` in ``trade_lab.ml.models``.
+_NESTED_MODEL_TYPES = ("Functional", "Sequential")
+
 
 # ---------------------------------------------------------------------------
 # Config dataclasses
@@ -88,6 +94,12 @@ class MLStrategyConfig:
         From ``BaseStrategy.allow_short``.
     sizing : SizingConfig
         Position sizer configuration (reuses existing dataclass).
+    nested_summary : str | None
+        One-line description of the model's nested/ensemble structure (e.g.
+        ``"nested model: 3 sub-models, Average output"``), populated only
+        when ``layers`` is empty because the model has no top-level Dense
+        layer (a seed-ensemble ONNX export). ``None`` for ordinary flat
+        Dense-layer models.
     """
 
     layers: list[MLLayerConfig]
@@ -99,6 +111,7 @@ class MLStrategyConfig:
     allow_short: bool
     sizing: SizingConfig
     risk: RiskConfig = field(default_factory=RiskConfig)
+    nested_summary: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +129,32 @@ def _normalise_activation(raw: str | dict) -> str:
     if isinstance(raw, dict):
         return raw.get("class_name", "linear").lower()
     return str(raw).lower()
+
+
+def _describe_nested_model(keras_model: object) -> str | None:
+    """Return a one-line description of a model with no top-level Dense layer.
+
+    Used for seed-ensemble ONNX exports (``ensemble_average_model``):
+    ``inputs -> [member(inputs) for member in members] -> Average``. The
+    top-level layer list then holds an ``InputLayer``, one nested
+    ``Functional``/``Sequential`` layer per member, and an ``Average`` layer
+    — no top-level Dense to describe, so this reports the container count
+    and whether the outputs are averaged instead.
+
+    Returns ``None`` if the model has no nested sub-model layers either (an
+    unusual, effectively empty model) — callers treat that as "nothing to
+    report" rather than raising.
+    """
+    layers = list(getattr(keras_model, "layers", []))
+    nested_containers = [
+        layer for layer in layers if type(layer).__name__ in _NESTED_MODEL_TYPES
+    ]
+    if not nested_containers:
+        return None
+
+    has_average = any(type(layer).__name__ == "Average" for layer in layers)
+    suffix = ", Average output" if has_average else ""
+    return f"nested model: {len(nested_containers)} sub-models{suffix}"
 
 
 def _extract_sizing(strategy: MLStrategy) -> SizingConfig:
@@ -210,10 +249,15 @@ class MLStrategyIntrospector:
 
             dense_index += 1
 
+        nested_summary = None
+        if not dense_layers:
+            nested_summary = _describe_nested_model(keras_model)
+
         return MLStrategyConfig(
             layers=dense_layers,
             feature_names=feature_names,
             n_features=len(feature_names),
+            nested_summary=nested_summary,
             entry_threshold=strategy.entry_threshold,
             exit_threshold=strategy.exit_threshold,
             allow_long=strategy.allow_long,
