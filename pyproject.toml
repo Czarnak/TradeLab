@@ -41,7 +41,7 @@ ml = [
     "lightgbm>=4.5",
 ]
 mql5 = ["Jinja2>=3.1"]
-onnx = ["Jinja2>=3.1", "tf2onnx>=1.16", "onnx>=1.15", "onnxruntime>=1.17"]
+onnx = ["Jinja2>=3.1", "tf2onnx>=1.16", "onnx>=1.22.0", "onnxruntime>=1.17"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "tqdm>=4.65", "ruff>=0.15.16"]
 examples = ["nbformat>=4.2.0"]
 
