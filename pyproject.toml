@@ -35,7 +35,7 @@ dependencies = [
 [project.optional-dependencies]
 ml = [
     "tensorflow>=2.20",
-    "keras>=3.13",
+    "keras>=3.15.0",
     "optuna-integration[keras]>=4.5",
     "scikit-learn>=1.8",
     "lightgbm>=4.5",
